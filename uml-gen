@@ -209,10 +209,22 @@ main() {
     python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml
     
     # Move .puml if generated in wrong location
-    INPUT_PUML="${INPUT_FILE%.yaml}.puml"
-    INPUT_PUML="${INPUT_PUML%.yml}.puml"
+    INPUT_DIR=$(dirname "$INPUT_FILE")
+    INPUT_NAME=$(basename "${INPUT_FILE%.yaml}")
+    INPUT_NAME="${INPUT_NAME%.yml}"
+    INPUT_PUML="${INPUT_DIR}/${INPUT_NAME}.puml"
+    
     if [[ -f "$INPUT_PUML" && "$INPUT_PUML" != "$PUML_FILE" ]]; then
         mv "$INPUT_PUML" "$PUML_FILE"
+    fi
+    
+    # Ensure PUML file exists
+    if [[ ! -f "$PUML_FILE" ]]; then
+        # Try to find it
+        FOUND_PUML=$(find "$INPUT_DIR" -name "*.puml" -newer "$INPUT_FILE" 2>/dev/null | head -1)
+        if [[ -n "$FOUND_PUML" ]]; then
+            mv "$FOUND_PUML" "$PUML_FILE"
+        fi
     fi
 
     # Generate images if requested
