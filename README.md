@@ -311,16 +311,17 @@ See the `examples/` directory for sample YAML files:
 
 The generator uses these rules for clean, readable diagrams:
 
-| Rule | Why |
-|------|-----|
-| Top-to-bottom layout | Prevents label overlap (left-to-right causes collisions) |
-| Node separation: 80px | Gives room for association labels |
-| Rank separation: 60px | Vertical spacing between hierarchy levels |
-| Single-line role labels | `"- roleName mult"` prevents text overlapping classes |
-| Scale 1.2 @ 150 DPI | Good resolution without excessive file size |
-| Smaller fonts (11/10px) | Reduces visual clutter |
-| Yellow background (#FFFFCC) | Matches Astah's default class color |
-| Package frame | `pkg ModelName` matches Astah conventions |
+| Rule | Value | Why |
+|------|-------|-----|
+| Top-to-bottom layout | default | Prevents label overlap (left-to-right causes collisions) |
+| Node separation | 100px | Gives room for association labels |
+| Rank separation | 80px | Vertical spacing between hierarchy levels |
+| Class font | 11px | Readable class names |
+| Attribute font | 10px | Smaller for attributes |
+| Role label font | 9px | Smallest - prevents overlap on association lines |
+| Scale | 1.2 @ 150 DPI | Good resolution without excessive file size |
+| Yellow background | #FFFFCC | Matches Astah's default class color |
+| Package frame | `pkg ModelName` | Matches Astah conventions |
 
 ## Requirements
 
