@@ -240,31 +240,67 @@ def main():
 
 
 def generate_plantuml(model: dict) -> str:
-    """Generate PlantUML from model definition"""
-    lines = ['@startuml ' + model.get('name', 'DomainModel').replace(' ', '_'), '']
+    """Generate PlantUML from model definition with Astah-like styling"""
+    model_name = model.get('name', 'DomainModel')
+    
+    lines = [
+        f'@startuml {model_name.replace(" ", "_")}',
+        '',
+        "' Astah-like styling",
+        'skinparam backgroundColor white',
+        'skinparam class {',
+        '    BackgroundColor #FFFFCC',
+        '    BorderColor #000000',
+        '    ArrowColor #000000',
+        '    FontName Arial',
+        '    FontSize 12',
+        '    AttributeFontSize 11',
+        '}',
+        'skinparam enum {',
+        '    BackgroundColor #FFFFCC',
+        '    BorderColor #000000',
+        '}',
+        'skinparam package {',
+        '    BackgroundColor white',
+        '    BorderColor #000000',
+        '    FontSize 14',
+        '    FontStyle bold',
+        '}',
+        'skinparam stereotype {',
+        '    CBackgroundColor #FFFFCC',
+        '}',
+        "skinparam linetype ortho",
+        '',
+        f'package "pkg {model_name}" <<Frame>> {{',
+        '',
+    ]
     
     # Enumerations
     for enum_name, values in model.get('enumerations', {}).items():
-        lines.append(f'enum {enum_name} {{')
+        lines.append(f'  enum {enum_name} <<enumeration>> {{')
         for value in values:
-            lines.append(f'  {value}')
-        lines.append('}')
+            lines.append(f'    + {value}()')
+        lines.append('  }')
         lines.append('')
     
     # Classes
     for class_name, class_def in model.get('classes', {}).items():
         abstract = 'abstract ' if class_def.get('abstract', False) else ''
-        lines.append(f'{abstract}class {class_name} {{')
+        lines.append(f'  {abstract}class {class_name} {{')
         for attr in class_def.get('attributes', []):
             vis = attr.get('visibility', '-')
             if vis == 'private': vis = '-'
             elif vis == 'public': vis = '+'
             elif vis == 'protected': vis = '#'
-            lines.append(f'  {vis} {attr["name"]} : {attr.get("type", "String")}')
-        lines.append('}')
+            attr_type = attr.get("type", "String")
+            lines.append(f'    {vis} {attr["name"]} : {attr_type}')
+        lines.append('  }')
         lines.append('')
     
-    # Associations
+    lines.append('}')  # Close package
+    lines.append('')
+    
+    # Associations (outside package for cleaner rendering)
     for assoc in model.get('associations', []):
         from_c = assoc.get('from')
         to_c = assoc.get('to')
@@ -272,6 +308,8 @@ def generate_plantuml(model: dict) -> str:
         to_mult = assoc.get('toMultiplicity', '1')
         assoc_type = assoc.get('type', 'association')
         name = assoc.get('name', '')
+        from_role = assoc.get('fromRole', '')
+        to_role = assoc.get('toRole', '')
         
         if assoc_type == 'composition':
             arrow = '*--'
@@ -280,8 +318,19 @@ def generate_plantuml(model: dict) -> str:
         else:
             arrow = '--'
         
-        label = f' : {name}' if name else ''
-        lines.append(f'{from_c} "{from_mult}" {arrow} "{to_mult}" {to_c}{label}')
+        # Build role labels
+        from_label = f'"{from_mult}"'
+        to_label = f'"{to_mult}"'
+        
+        if from_role:
+            from_label = f'"- {from_role}\\n{from_mult}"'
+        if to_role:
+            to_label = f'"- {to_role}\\n{to_mult}"'
+        
+        assoc_label = f' : {name}' if name else ''
+        lines.append(f'{from_c} {from_label} {arrow} {to_label} {to_c}{assoc_label}')
+    
+    lines.append('')
     
     # Generalizations
     for gen in model.get('generalizations', []):

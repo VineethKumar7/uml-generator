@@ -1,0 +1,181 @@
+# TSS Domain Model - Time Sheet System
+# Based on EWADIS lecture examples
+
+name: "TSS domain model"
+
+enumerations:
+  ContractStatus:
+    - PREPARED
+    - STARTED
+    - TERMINATED
+    - ARCHIVED
+  
+  TimesheetFrequency:
+    - WEEKLY
+    - MONTHLY
+  
+  TimesheetStatus:
+    - IN_PROGRESS
+    - SIGNED_BY_EMPLOYEE
+    - SIGNED_BY_SUPERVISOR
+    - ARCHIVED
+  
+  ReportType:
+    - WORK
+    - VACATION
+    - SICK_LEAVE
+
+classes:
+  Person:
+    attributes:
+      - name: firstName
+        type: String
+      - name: lastName
+        type: String
+      - name: dateOfBirth
+        type: LocalDate
+      - name: emailAddress
+        type: String
+      - name: consent
+        type: boolean
+
+  Role:
+    abstract: true
+    attributes: []
+
+  Secretary:
+    attributes: []
+
+  Employee:
+    attributes: []
+
+  Supervisor:
+    attributes: []
+
+  Assistant:
+    attributes: []
+
+  Contract:
+    attributes:
+      - name: status
+        type: ContractStatus
+      - name: name
+        type: String
+      - name: startDate
+        type: LocalDate
+      - name: endDate
+        type: LocalDate
+      - name: frequency
+        type: TimesheetFrequency
+      - name: terminationDate
+        type: LocalDate
+      - name: hoursPerWeek
+        type: double
+      - name: vacationHours
+        type: double
+      - name: hoursDue
+        type: double
+      - name: workingDaysPerWeek
+        type: int
+      - name: vacationDaysPerYear
+        type: int
+
+  Timesheet:
+    attributes:
+      - name: status
+        type: TimesheetStatus
+      - name: startDate
+        type: LocalDate
+      - name: endDate
+        type: LocalDate
+      - name: hoursDue
+        type: double
+      - name: signedByEmployee
+        type: LocalDate
+      - name: signedBySupervisor
+        type: LocalDate
+
+  TimesheetEntry:
+    attributes:
+      - name: type
+        type: ReportType
+      - name: description
+        type: String
+      - name: hours
+        type: double
+      - name: startTime
+        type: LocalDate
+      - name: endTime
+        type: LocalDate
+      - name: entryDate
+        type: LocalDate
+
+associations:
+  # Person - Role
+  - from: Person
+    to: Role
+    fromRole: person
+    toRole: role
+    fromMultiplicity: "1"
+    toMultiplicity: "0..1"
+    type: association
+
+  # Secretary - Contract
+  - from: Secretary
+    to: Contract
+    toRole: secretary
+    fromMultiplicity: "1..*"
+    toMultiplicity: "1"
+    type: association
+
+  # Employee - Contract
+  - from: Employee
+    to: Contract
+    toRole: employee
+    fromMultiplicity: "1"
+    toMultiplicity: "1"
+    type: association
+
+  # Supervisor - Contract
+  - from: Supervisor
+    to: Contract
+    toRole: supervisor
+    fromMultiplicity: "1"
+    toMultiplicity: "1"
+    type: association
+
+  # Assistant - Contract
+  - from: Assistant
+    to: Contract
+    toRole: assistant
+    fromMultiplicity: "0..*"
+    toMultiplicity: "1"
+    type: association
+
+  # Contract - Timesheet (Composition)
+  - from: Contract
+    to: Timesheet
+    fromRole: contract
+    toRole: timesheets
+    fromMultiplicity: "1"
+    toMultiplicity: "*"
+    type: composition
+
+  # Timesheet - TimesheetEntry (Composition)
+  - from: Timesheet
+    to: TimesheetEntry
+    fromRole: timesheet
+    toRole: timesheetEntry
+    fromMultiplicity: "1"
+    toMultiplicity: "*"
+    type: composition
+
+generalizations:
+  - parent: Role
+    child: Secretary
+  - parent: Role
+    child: Employee
+  - parent: Role
+    child: Supervisor
+  - parent: Role
+    child: Assistant
