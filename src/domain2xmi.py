@@ -247,9 +247,8 @@ def generate_plantuml(model: dict) -> str:
         f'@startuml {model_name.replace(" ", "_")}',
         '',
         "' Image size and layout",
-        'scale 1.5',
+        'scale 1.2',
         'skinparam dpi 150',
-        'left to right direction',
         '',
         "' Astah-like styling",
         'skinparam backgroundColor white',
@@ -258,8 +257,8 @@ def generate_plantuml(model: dict) -> str:
         '    BorderColor #000000',
         '    ArrowColor #000000',
         '    FontName Arial',
-        '    FontSize 12',
-        '    AttributeFontSize 11',
+        '    FontSize 11',
+        '    AttributeFontSize 10',
         '}',
         'skinparam enum {',
         '    BackgroundColor #FFFFCC',
@@ -268,15 +267,15 @@ def generate_plantuml(model: dict) -> str:
         'skinparam package {',
         '    BackgroundColor white',
         '    BorderColor #000000',
-        '    FontSize 14',
+        '    FontSize 12',
         '    FontStyle bold',
         '}',
         'skinparam stereotype {',
         '    CBackgroundColor #FFFFCC',
         '}',
-        'skinparam padding 10',
-        'skinparam nodesep 50',
-        'skinparam ranksep 50',
+        "' Spacing",
+        'skinparam nodesep 80',
+        'skinparam ranksep 60',
         '',
         f'package "pkg {model_name}" <<Frame>> {{',
         '',
@@ -325,17 +324,17 @@ def generate_plantuml(model: dict) -> str:
         else:
             arrow = '--'
         
-        # Build role labels
-        from_label = f'"{from_mult}"'
-        to_label = f'"{to_mult}"'
+        # Build labels - role names near multiplicity (single line to avoid overlap)
+        from_label = from_mult
+        to_label = to_mult
         
         if from_role:
-            from_label = f'"- {from_role}\\n{from_mult}"'
+            from_label = f"- {from_role} {from_mult}"
         if to_role:
-            to_label = f'"- {to_role}\\n{to_mult}"'
+            to_label = f"- {to_role} {to_mult}"
         
         assoc_label = f' : {name}' if name else ''
-        lines.append(f'{from_c} {from_label} {arrow} {to_label} {to_c}{assoc_label}')
+        lines.append(f'{from_c} "{from_label}" {arrow} "{to_label}" {to_c}{assoc_label}')
     
     lines.append('')
     
