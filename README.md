@@ -63,7 +63,8 @@ classes:
 associations:
   - from: Person
     to: Contract
-    name: has
+    fromRole: person        # Role on BOTH ends (mandatory!)
+    toRole: contracts       # What Contract is from Person's view
     fromMultiplicity: "1"
     toMultiplicity: "0..*"
     type: association
@@ -159,11 +160,13 @@ classes:
         type: Integer
 
 # Associations between classes
+# ⚠️ ALWAYS include fromRole AND toRole on BOTH ends!
 associations:
-  # Simple association
+  # Simple association - roles on BOTH ends
   - from: Customer
     to: Order
-    name: places
+    fromRole: customer       # What Customer is from Order's view
+    toRole: orders           # What Order is from Customer's view
     fromMultiplicity: "1"
     toMultiplicity: "0..*"
     type: association
@@ -171,7 +174,8 @@ associations:
   # Composition (◆) - child cannot exist without parent
   - from: Order
     to: OrderItem
-    name: contains
+    fromRole: order          # What Order is from OrderItem's view
+    toRole: items            # What OrderItem is from Order's view
     fromMultiplicity: "1"
     toMultiplicity: "1..*"
     type: composition
@@ -179,7 +183,8 @@ associations:
   # Aggregation (◇) - child can exist independently
   - from: ShoppingCart
     to: Product
-    name: items
+    fromRole: cart           # What ShoppingCart is from Product's view
+    toRole: products         # What Product is from ShoppingCart's view
     fromMultiplicity: "1"
     toMultiplicity: "0..*"
     type: aggregation
@@ -211,6 +216,52 @@ generalizations:
 | `association` | — | Simple relationship |
 | `composition` | ◆ | Strong ownership (child deleted with parent) |
 | `aggregation` | ◇ | Weak ownership (child can exist independently) |
+
+### ⚠️ Role Naming Convention (MANDATORY)
+
+**Every association MUST have role names on BOTH ends:**
+
+```yaml
+associations:
+  - from: Authority
+    to: Building
+    fromRole: authority    # ← REQUIRED: What Authority is from Building's view
+    toRole: buildings      # ← REQUIRED: What Building is from Authority's view
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+```
+
+**Rule:** The role name describes what that class is **FROM THE OTHER CLASS'S PERSPECTIVE**.
+
+| From | To | fromRole | toRole | Explanation |
+|------|-----|----------|--------|-------------|
+| Authority | Building | `authority` | `buildings` | Building sees "my authority", Authority sees "my buildings" |
+| Person | Contract | `employee` | `contracts` | Contract sees "my employee", Person sees "my contracts" |
+| Order | Item | `order` | `items` | Item sees "my order", Order sees "my items" |
+
+**Output format:** Roles are prefixed with `-` (private visibility) in the diagram:
+```
+Authority "- authority 1" -- "- buildings 1..*" Building
+```
+
+**❌ WRONG (missing roles):**
+```yaml
+- from: Authority
+  to: Building
+  name: adds           # Only association name, no roles!
+  fromMultiplicity: "1"
+  toMultiplicity: "1..*"
+```
+
+**✅ CORRECT (both roles):**
+```yaml
+- from: Authority
+  to: Building
+  fromRole: authority
+  toRole: buildings
+  fromMultiplicity: "1"
+  toMultiplicity: "1..*"
+```
 
 ### Multiplicities
 
