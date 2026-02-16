@@ -1,0 +1,266 @@
+#!/bin/bash
+# UML Domain Model Generator
+# https://github.com/VineethKumar7/uml-generator
+#
+# Generates UML Class Diagrams from YAML definitions
+# Outputs: XMI, PlantUML, PNG, JPEG, SVG
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLANTUML_JAR="$SCRIPT_DIR/plantuml.jar"
+PLANTUML_URL="https://github.com/plantuml/plantuml/releases/download/v1.2024.8/plantuml-1.2024.8.jar"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+show_help() {
+    cat << 'EOF'
+UML Domain Model Generator
+
+Generate UML Class Diagrams from simple YAML definitions.
+
+Usage:
+  uml-gen <model.yaml> [options]
+
+Options:
+  -o, --output <name>   Output base name (without extension)
+  --png                 Generate PNG image
+  --jpg, --jpeg         Generate JPEG image  
+  --svg                 Generate SVG image
+  --xmi                 Generate XMI file
+  --plantuml            Generate PlantUML file
+  --all                 Generate all formats
+  --example             Show example YAML format
+  -h, --help            Show this help
+
+Examples:
+  uml-gen model.yaml --png              # Generate PNG
+  uml-gen model.yaml --all              # All formats
+  uml-gen model.yaml -o output/diagram  # Custom output path
+
+More info: https://github.com/VineethKumar7/uml-generator
+EOF
+}
+
+show_example() {
+    cat << 'EOF'
+# Example YAML format for uml-gen
+
+name: "My Domain Model"
+
+enumerations:
+  Status:
+    - ACTIVE
+    - INACTIVE
+
+classes:
+  Person:
+    attributes:
+      - name: firstName
+        type: String
+        visibility: private
+      - name: email
+        type: String
+        visibility: private
+  
+  Contract:
+    attributes:
+      - name: id
+        type: String
+      - name: startDate
+        type: Date
+
+associations:
+  - from: Person
+    to: Contract
+    name: has
+    fromMultiplicity: "1"
+    toMultiplicity: "0..*"
+    type: association     # or: composition, aggregation
+
+generalizations:
+  - parent: Entry
+    child: Product
+EOF
+}
+
+# Check dependencies
+check_deps() {
+    if ! command -v python3 &> /dev/null; then
+        echo -e "${RED}Error: Python 3 is required${NC}"
+        exit 1
+    fi
+    
+    if ! python3 -c "import yaml" 2>/dev/null; then
+        echo -e "${YELLOW}Installing PyYAML...${NC}"
+        pip3 install pyyaml --quiet
+    fi
+}
+
+# Download PlantUML if needed
+ensure_plantuml() {
+    if [[ ! -f "$PLANTUML_JAR" ]]; then
+        echo -e "${YELLOW}Downloading PlantUML...${NC}"
+        curl -sL -o "$PLANTUML_JAR" "$PLANTUML_URL"
+    fi
+}
+
+# Main logic
+main() {
+    # Handle special flags first
+    case "${1:-}" in
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        --example|-e)
+            show_example
+            exit 0
+            ;;
+        "")
+            echo -e "${RED}Error: No input file specified${NC}"
+            echo "Usage: uml-gen <model.yaml> [options]"
+            echo "       uml-gen --help"
+            exit 1
+            ;;
+    esac
+
+    check_deps
+
+    INPUT_FILE="$1"
+    shift
+
+    if [[ ! -f "$INPUT_FILE" ]]; then
+        echo -e "${RED}Error: File not found: $INPUT_FILE${NC}"
+        exit 1
+    fi
+
+    # Parse options
+    OUTPUT_BASE=""
+    GEN_PNG=false
+    GEN_JPG=false
+    GEN_SVG=false
+    GEN_XMI=false
+    GEN_PUML=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -o|--output)
+                OUTPUT_BASE="$2"
+                shift 2
+                ;;
+            --png)
+                GEN_PNG=true
+                shift
+                ;;
+            --jpg|--jpeg)
+                GEN_JPG=true
+                shift
+                ;;
+            --svg)
+                GEN_SVG=true
+                shift
+                ;;
+            --xmi)
+                GEN_XMI=true
+                shift
+                ;;
+            --plantuml)
+                GEN_PUML=true
+                shift
+                ;;
+            --all)
+                GEN_PNG=true
+                GEN_JPG=true
+                GEN_SVG=true
+                GEN_XMI=true
+                GEN_PUML=true
+                shift
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Default: if no format specified, generate PNG
+    if ! $GEN_PNG && ! $GEN_JPG && ! $GEN_SVG && ! $GEN_XMI && ! $GEN_PUML; then
+        GEN_PNG=true
+    fi
+
+    # Determine output base name
+    if [[ -z "$OUTPUT_BASE" ]]; then
+        OUTPUT_BASE="${INPUT_FILE%.yaml}"
+        OUTPUT_BASE="${OUTPUT_BASE%.yml}"
+    fi
+
+    OUTPUT_DIR=$(dirname "$OUTPUT_BASE")
+    mkdir -p "$OUTPUT_DIR"
+
+    # Always generate PlantUML first (needed for images)
+    PUML_FILE="${OUTPUT_BASE}.puml"
+    
+    # Run Python generator
+    python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml
+    
+    # Move .puml if generated in wrong location
+    INPUT_PUML="${INPUT_FILE%.yaml}.puml"
+    INPUT_PUML="${INPUT_PUML%.yml}.puml"
+    if [[ -f "$INPUT_PUML" && "$INPUT_PUML" != "$PUML_FILE" ]]; then
+        mv "$INPUT_PUML" "$PUML_FILE"
+    fi
+
+    # Generate images if requested
+    if $GEN_PNG || $GEN_JPG || $GEN_SVG; then
+        ensure_plantuml
+        
+        if ! command -v java &> /dev/null; then
+            echo -e "${RED}Error: Java is required for image generation${NC}"
+            exit 1
+        fi
+    fi
+
+    # Generate PNG
+    if $GEN_PNG; then
+        java -jar "$PLANTUML_JAR" -tpng -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.png" 2>/dev/null
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.png${NC}"
+    fi
+
+    # Generate JPEG
+    if $GEN_JPG; then
+        java -jar "$PLANTUML_JAR" -tjpg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.jpg" 2>/dev/null
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.jpg${NC}"
+    fi
+
+    # Generate SVG
+    if $GEN_SVG; then
+        java -jar "$PLANTUML_JAR" -tsvg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.svg" 2>/dev/null
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.svg${NC}"
+    fi
+
+    # Report XMI
+    if $GEN_XMI; then
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.xmi${NC}"
+    fi
+
+    # Report PlantUML
+    if $GEN_PUML; then
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.puml${NC}"
+    fi
+
+    # Cleanup if not needed
+    if ! $GEN_PUML && ! $GEN_PNG && ! $GEN_JPG && ! $GEN_SVG; then
+        rm -f "$PUML_FILE"
+    fi
+    
+    if ! $GEN_XMI; then
+        rm -f "${OUTPUT_BASE}.xmi"
+    fi
+}
+
+main "$@"

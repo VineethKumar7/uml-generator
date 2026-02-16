@@ -1,0 +1,161 @@
+# CBS Domain Model - Example YAML for domain2xmi.py
+# Usage: python3 domain2xmi.py cbs_domain_model.yaml -o cbs.xmi --plantuml
+
+name: "CBS Domain Model"
+
+enumerations:
+  Status:
+    - APPROVED
+    - NOT_APPROVED
+  
+  BuildingType:
+    - HOUSE
+    - MULTISTORY
+    - COMMERCIAL
+    - HERITAGE
+    - UNSPECIFIED
+
+classes:
+  RequestingEntity:
+    attributes: []
+  
+  ProfileOverview:
+    attributes: []
+  
+  BuildingRequest:
+    attributes:
+      - name: id
+        type: String
+        visibility: private
+      - name: date
+        type: Date
+        visibility: private
+      - name: status
+        type: Status
+        visibility: private
+  
+  PermittingAuthority:
+    attributes: []
+  
+  Authority:
+    attributes: []
+  
+  BuildingRule:
+    attributes:
+      - name: ruleId
+        type: String
+        visibility: private
+      - name: name
+        type: String
+        visibility: private
+      - name: description
+        type: String
+        visibility: private
+  
+  Building:
+    attributes:
+      - name: buildingId
+        type: String
+        visibility: private
+      - name: name
+        type: String
+        visibility: private
+      - name: description
+        type: String
+        visibility: private
+      - name: type
+        type: BuildingType
+        visibility: private
+  
+  Address:
+    attributes:
+      - name: streetName
+        type: String
+        visibility: private
+      - name: postCode
+        type: String
+        visibility: private
+      - name: region
+        type: String
+        visibility: private
+      - name: city
+        type: String
+        visibility: private
+      - name: province
+        type: String
+        visibility: private
+  
+  Image:
+    attributes:
+      - name: name
+        type: String
+        visibility: private
+      - name: size
+        type: int
+        visibility: private
+
+associations:
+  - from: RequestingEntity
+    to: ProfileOverview
+    name: has
+    fromMultiplicity: "1"
+    toMultiplicity: "1"
+    type: association
+  
+  - from: RequestingEntity
+    to: BuildingRequest
+    name: issues
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+    type: association
+  
+  - from: Authority
+    to: BuildingRequest
+    name: assignedTo
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+    type: association
+  
+  - from: PermittingAuthority
+    to: BuildingRule
+    name: hasAccess
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+    type: association
+  
+  - from: Authority
+    to: BuildingRule
+    name: belongsTo
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+    type: association
+  
+  - from: Authority
+    to: Building
+    name: adds
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+    type: association
+  
+  - from: Building
+    to: Address
+    name: has
+    fromMultiplicity: "1"
+    toMultiplicity: "1"
+    type: association
+  
+  - from: Building
+    to: Image
+    name: has
+    fromMultiplicity: "1"
+    toMultiplicity: "1..*"
+    type: composition  # ◆ - Image deleted with Building
+  
+  - from: BuildingRequest
+    to: Building
+    name: for
+    fromMultiplicity: "0..1"
+    toMultiplicity: "0..1"
+    type: association
+
+generalizations: []
