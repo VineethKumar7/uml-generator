@@ -256,6 +256,21 @@ See the `examples/` directory for sample YAML files:
 
 > Note: Some Astah versions may have limited XMI import support. Use the PNG output as a reference for manual creation if needed.
 
+## Layout Rules
+
+The generator uses these rules for clean, readable diagrams:
+
+| Rule | Why |
+|------|-----|
+| Top-to-bottom layout | Prevents label overlap (left-to-right causes collisions) |
+| Node separation: 80px | Gives room for association labels |
+| Rank separation: 60px | Vertical spacing between hierarchy levels |
+| Single-line role labels | `"- roleName mult"` prevents text overlapping classes |
+| Scale 1.2 @ 150 DPI | Good resolution without excessive file size |
+| Smaller fonts (11/10px) | Reduces visual clutter |
+| Yellow background (#FFFFCC) | Matches Astah's default class color |
+| Package frame | `pkg ModelName` matches Astah conventions |
+
 ## Requirements
 
 - Python 3.8+

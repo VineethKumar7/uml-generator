@@ -240,7 +240,18 @@ def main():
 
 
 def generate_plantuml(model: dict) -> str:
-    """Generate PlantUML from model definition with Astah-like styling"""
+    """
+    Generate PlantUML from model definition with Astah-like styling.
+    
+    Layout Rules (learned from testing):
+    1. Top-to-bottom layout (NOT left-to-right) - prevents label overlap
+    2. Node separation 80px, rank separation 60px - gives room for labels
+    3. Single-line role labels "- roleName mult" - prevents text overlap with classes
+    4. Scale 1.2 with 150 DPI - good resolution without being too large
+    5. Smaller fonts (11/10px) - reduces visual clutter
+    6. Package frame with "pkg ModelName" - matches Astah style
+    7. Yellow/beige (#FFFFCC) background - matches Astah class color
+    """
     model_name = model.get('name', 'DomainModel')
     
     lines = [
