@@ -3,18 +3,20 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-Generate UML Class Diagrams from simple YAML definitions. Outputs XMI, PlantUML, PNG, JPEG, and SVG.
+Generate **UML Class Diagrams** and **Graph Schemas** (Neo4j property graphs) from simple YAML definitions. Outputs XMI, PlantUML, PNG, JPEG, and SVG.
 
 Perfect for:
-- 📚 Students creating UML diagrams for exams
+- 📚 Students creating UML diagrams for exams (including EWADIS!)
 - 🏗️ Software architects documenting domain models
 - 🚀 Quick prototyping of data models
+- 📊 Neo4j/Graph database schema design
 
 ## Features
 
 - ✅ **Simple YAML input** — Human-readable model definitions
 - ✅ **Multiple output formats** — XMI, PlantUML, PNG, JPEG, SVG
 - ✅ **Full UML support** — Classes, attributes, associations, compositions, aggregations, enumerations, inheritance
+- ✅ **Graph Schema support** — Generate Neo4j property graph schemas with automatic direction detection
 - ✅ **Astah compatible** — Generated XMI can be imported into Astah
 - ✅ **Command-line tool** — Easy integration into workflows
 
@@ -286,9 +288,66 @@ Options:
   --xmi                 Generate XMI file (default)
   --plantuml            Generate PlantUML file
   --all                 Generate all formats
+  --graph               Generate Graph Schema (Neo4j property graph)
+  --graph-rules         Show Graph Schema conversion rules
   --example             Show example YAML format
   --help                Show help
 ```
+
+## Graph Schema Generation
+
+Generate Neo4j property graph schemas from the same YAML input used for UML diagrams.
+
+### Usage
+
+```bash
+# Generate Graph Schema PNG
+./uml-gen model.yaml --graph --png
+
+# Show conversion rules
+./uml-gen --graph-rules
+```
+
+### What It Does
+
+The `--graph` flag automatically converts your OO/UML model to a Graph Schema:
+
+| OO Schema | Graph Schema |
+|-----------|--------------|
+| Abstract classes | **Removed** (properties copied to children) |
+| Concrete inheritance | **Flattened** (properties AND relationships copied) |
+| Role names (`purchases`) | Converted to `HAS_PURCHASE` format |
+| Composition (◆) | Becomes `CONTAINS` |
+| Multiplicities | **Removed** (not used in graph schemas) |
+| Arrowheads | **Removed** (direction shown in text: ► ▼ ◄ ▲) |
+
+### Automatic Direction Detection
+
+The tool uses a **two-pass approach** to automatically determine the correct direction symbol:
+
+1. **First pass**: Render the diagram as SVG
+2. **Parse positions**: Extract X,Y coordinates of each class from SVG
+3. **Calculate directions**: Determine relative positions (right, down, etc.)
+4. **Second pass**: Generate final diagram with correct symbols (► ▼ ◄ ▲)
+
+This ensures the direction symbols always match the actual visual layout!
+
+### Example Output
+
+```
+Person ── HAS_FRIEND ► ── Person (self-loop)
+Person ── HAS_PURCHASE ▼ ── Purchase (down)
+Purchase ── HAS_PRODUCT ► ── Product (right)
+Category ── CONTAINS ▼ ── Product (down)
+```
+
+### Graph Schema Features
+
+- 🟢 **Green node colors** — Distinguishes from UML (yellow)
+- 📐 **Straight lines** — Using polyline layout
+- ➡️ **Direction in text** — No arrowheads on lines, direction shown as ► ▼ ◄ ▲
+- 🔄 **Inheritance flattening** — Subclasses get parent's properties AND relationships
+- 📝 **Relationship naming** — Auto-converts role names to `HAS_X` format
 
 ## Examples
 

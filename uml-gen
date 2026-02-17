@@ -21,7 +21,7 @@ show_help() {
     cat << 'EOF'
 UML Domain Model Generator
 
-Generate UML Class Diagrams from simple YAML definitions.
+Generate UML Class Diagrams or Graph Schemas from simple YAML definitions.
 
 Usage:
   uml-gen <model.yaml> [options]
@@ -34,12 +34,15 @@ Options:
   --xmi                 Generate XMI file
   --plantuml            Generate PlantUML file
   --all                 Generate all formats
+  --graph               Generate Graph Schema (Neo4j property graph)
   --example             Show example YAML format
+  --graph-rules         Show Graph Schema conversion rules
   -h, --help            Show this help
 
 Examples:
-  uml-gen model.yaml --png              # Generate PNG
-  uml-gen model.yaml --all              # All formats
+  uml-gen model.yaml --png              # Generate UML PNG
+  uml-gen model.yaml --graph --png      # Generate Graph Schema PNG
+  uml-gen model.yaml --all              # All formats (UML)
   uml-gen model.yaml -o output/diagram  # Custom output path
 
 More info: https://github.com/VineethKumar7/uml-generator
@@ -88,6 +91,43 @@ generalizations:
 EOF
 }
 
+show_graph_rules() {
+    cat << 'EOF'
+Graph Schema Conversion Rules (from OO Schema)
+==============================================
+
+1. NODE LABELS
+   - No colon prefix: "Person" not ":Person"
+   - Remove abstract classes (flatten to children)
+
+2. FLATTEN INHERITANCE
+   Scenario A (Abstract → Concrete):
+   - Copy properties only to children
+   - Remove abstract class
+   
+   Scenario B (Concrete → Concrete):
+   - Copy ALL properties from parent to child
+   - Copy ALL relationships with same names
+   - Remove inheritance connection
+
+3. RELATIONSHIPS
+   - Derive name from OO role name: "purchases" → "HAS_PURCHASE"
+   - Add "HAS_" prefix, use UPPER_SNAKE_CASE
+   - Composition (◆) becomes "CONTAINS"
+   - Arrow (►) in name points toward target
+   - NO multiplicities in graph schema
+   - NO role names
+
+4. PROPERTIES
+   - Keep data types
+   - No visibility symbols
+
+Example:
+  OO:    Person --(*  - purchases)--> Purchase
+  Graph: Person --- HAS_PURCHASE ► --- Purchase
+EOF
+}
+
 # Check dependencies
 check_deps() {
     if ! command -v python3 &> /dev/null; then
@@ -121,6 +161,10 @@ main() {
             show_example
             exit 0
             ;;
+        --graph-rules)
+            show_graph_rules
+            exit 0
+            ;;
         "")
             echo -e "${RED}Error: No input file specified${NC}"
             echo "Usage: uml-gen <model.yaml> [options]"
@@ -146,6 +190,7 @@ main() {
     GEN_SVG=false
     GEN_XMI=false
     GEN_PUML=false
+    GEN_GRAPH=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -171,6 +216,10 @@ main() {
                 ;;
             --plantuml)
                 GEN_PUML=true
+                shift
+                ;;
+            --graph)
+                GEN_GRAPH=true
                 shift
                 ;;
             --all)
@@ -206,7 +255,11 @@ main() {
     PUML_FILE="${OUTPUT_BASE}.puml"
     
     # Run Python generator
-    python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml
+    if $GEN_GRAPH; then
+        python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml --graph
+    else
+        python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml
+    fi
     
     # Move .puml if generated in wrong location
     INPUT_DIR=$(dirname "$INPUT_FILE")

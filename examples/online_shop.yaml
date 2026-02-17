@@ -1,0 +1,80 @@
+# Online Shop Domain Model
+# Based on EWADIS lecture examples (Professor's Graph Schema example)
+
+name: "Online Shop"
+
+classes:
+  Entry:
+    abstract: true
+    attributes:
+      - name: name
+        type: String
+
+  Person:
+    attributes:
+      - name: name
+        type: String
+
+  Category:
+    attributes: []
+
+  Product:
+    attributes:
+      - name: price
+        type: int
+
+  Food:
+    attributes:
+      - name: bestBefore
+        type: Date
+
+  Purchase:
+    attributes:
+      - name: quantity
+        type: int
+
+associations:
+  # Person - Person (friends)
+  - from: Person
+    to: Person
+    toRole: friends
+    fromMultiplicity: "*"
+    toMultiplicity: "*"
+    type: association
+
+  # Person - Purchase
+  - from: Person
+    to: Purchase
+    fromRole: customer
+    toRole: purchases
+    fromMultiplicity: "1"
+    toMultiplicity: "*"
+    type: association
+
+  # Purchase - Product
+  - from: Purchase
+    to: Product
+    toRole: product
+    fromMultiplicity: "*"
+    toMultiplicity: "1"
+    type: association
+
+  # Category - Product (composition)
+  - from: Category
+    to: Product
+    fromRole: category
+    toRole: products
+    fromMultiplicity: "1"
+    toMultiplicity: "*"
+    type: composition
+
+generalizations:
+  # Entry -> Category, Product
+  - parent: Entry
+    child: Category
+  - parent: Entry
+    child: Product
+  
+  # Product -> Food
+  - parent: Product
+    child: Food

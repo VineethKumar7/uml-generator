@@ -31,6 +31,9 @@ YAML Format:
 import argparse
 import yaml
 import uuid
+import re
+import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
 
@@ -38,6 +41,66 @@ from datetime import datetime
 def generate_id():
     """Generate a unique XMI ID"""
     return f"_{uuid.uuid4().hex[:16]}"
+
+
+def get_class_positions_from_svg(svg_content, class_names):
+    """
+    Parse SVG to extract X,Y positions of class boxes.
+    Returns dict: {class_name: (x, y)}
+    """
+    positions = {}
+    
+    # Parse SVG
+    try:
+        # Remove namespace for easier parsing
+        svg_content = re.sub(r'\sxmlns[^"]*"[^"]*"', '', svg_content)
+        root = ET.fromstring(svg_content)
+        
+        # Find text elements that match class names
+        for text_elem in root.iter():
+            if text_elem.text and text_elem.text.strip() in class_names:
+                class_name = text_elem.text.strip()
+                # Get position from transform or x,y attributes
+                x = float(text_elem.get('x', 0))
+                y = float(text_elem.get('y', 0))
+                
+                # Check parent group for transform
+                parent = text_elem
+                for _ in range(5):  # Check up to 5 levels
+                    parent = root.find(f".//*[./{text_elem.tag}]")
+                    if parent is not None:
+                        transform = parent.get('transform', '')
+                        if 'translate' in transform:
+                            match = re.search(r'translate\(([\d.]+)[,\s]+([\d.]+)\)', transform)
+                            if match:
+                                x += float(match.group(1))
+                                y += float(match.group(2))
+                
+                positions[class_name] = (x, y)
+    except Exception as e:
+        pass  # Fall back to default directions if parsing fails
+    
+    return positions
+
+
+def get_direction_symbol(from_pos, to_pos):
+    """
+    Determine direction symbol based on relative positions.
+    Returns: ► (right), ◄ (left), ▼ (down), ▲ (up)
+    """
+    if not from_pos or not to_pos:
+        return '▼'  # Default
+    
+    dx = to_pos[0] - from_pos[0]
+    dy = to_pos[1] - from_pos[1]
+    
+    # Determine primary direction
+    if abs(dx) > abs(dy):
+        # Horizontal movement is primary
+        return '►' if dx > 0 else '◄'
+    else:
+        # Vertical movement is primary
+        return '▼' if dy > 0 else '▲'
 
 
 def generate_xmi(model: dict) -> str:
@@ -202,6 +265,7 @@ def main():
     parser.add_argument('input', help='Input YAML file')
     parser.add_argument('-o', '--output', help='Output XMI file (default: input name with .xmi)')
     parser.add_argument('--plantuml', action='store_true', help='Also generate PlantUML file')
+    parser.add_argument('--graph', action='store_true', help='Generate Graph Schema instead of UML')
     
     args = parser.parse_args()
     
@@ -214,24 +278,28 @@ def main():
     with open(input_path, 'r') as f:
         model = yaml.safe_load(f)
     
-    # Generate XMI
-    xmi_content = generate_xmi(model)
+    # Generate XMI (only for UML mode)
+    if not args.graph:
+        xmi_content = generate_xmi(model)
+        
+        # Write output
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            output_path = input_path.with_suffix('.xmi')
+        
+        with open(output_path, 'w') as f:
+            f.write(xmi_content)
+        
+        print(f"✅ Generated: {output_path}")
     
-    # Write output
-    if args.output:
-        output_path = Path(args.output)
-    else:
-        output_path = input_path.with_suffix('.xmi')
-    
-    with open(output_path, 'w') as f:
-        f.write(xmi_content)
-    
-    print(f"✅ Generated: {output_path}")
-    
-    # Optionally generate PlantUML
+    # Generate PlantUML (UML or Graph Schema)
     if args.plantuml:
         puml_path = input_path.with_suffix('.puml')
-        puml_content = generate_plantuml(model)
+        if args.graph:
+            puml_content = generate_graph_plantuml(model)
+        else:
+            puml_content = generate_plantuml(model)
         with open(puml_path, 'w') as f:
             f.write(puml_content)
         print(f"✅ Generated: {puml_path}")
@@ -361,6 +429,298 @@ def generate_plantuml(model: dict) -> str:
     lines.append('@enduml')
     
     return '\n'.join(lines)
+
+
+def generate_graph_plantuml(model: dict) -> str:
+    """
+    Generate PlantUML for Graph Schema (Neo4j property graph).
+    
+    Conversion Rules (from Graph_Schema.md):
+    1. No colon prefix on labels: "Person" not ":Person"
+    2. Flatten inheritance:
+       - Abstract → Concrete: copy properties only
+       - Concrete → Concrete: copy properties AND relationships
+    3. Relationships:
+       - Derive name from role: "purchases" → "HAS_PURCHASE"
+       - Composition → "CONTAINS"
+       - Arrow (►) in name points toward target
+       - NO multiplicities
+    4. Remove abstract classes entirely
+    """
+    model_name = model.get('name', 'GraphSchema')
+    
+    # Build inheritance map
+    generalizations = model.get('generalizations', [])
+    parent_to_children = {}  # parent -> [children]
+    child_to_parent = {}     # child -> parent
+    
+    for gen in generalizations:
+        parent = gen.get('parent')
+        child = gen.get('child')
+        child_to_parent[child] = parent
+        if parent not in parent_to_children:
+            parent_to_children[parent] = []
+        parent_to_children[parent].append(child)
+    
+    # Identify abstract classes
+    classes = model.get('classes', {})
+    abstract_classes = set()
+    for class_name, class_def in classes.items():
+        if class_def.get('abstract', False):
+            abstract_classes.add(class_name)
+    
+    # Build flattened classes (with inherited properties)
+    flattened_classes = {}
+    
+    def get_all_properties(class_name, visited=None):
+        """Recursively get all properties including inherited ones"""
+        if visited is None:
+            visited = set()
+        if class_name in visited:
+            return []
+        visited.add(class_name)
+        
+        props = []
+        # Get parent properties first
+        if class_name in child_to_parent:
+            parent = child_to_parent[class_name]
+            props.extend(get_all_properties(parent, visited))
+        # Add own properties
+        if class_name in classes:
+            props.extend(classes[class_name].get('attributes', []))
+        return props
+    
+    # Flatten classes (skip abstract classes)
+    for class_name, class_def in classes.items():
+        if class_name in abstract_classes:
+            continue  # Skip abstract classes
+        flattened_classes[class_name] = {
+            'attributes': get_all_properties(class_name)
+        }
+    
+    # Build relationship map with inheritance
+    # For concrete inheritance, child gets parent's relationships
+    associations = model.get('associations', [])
+    flattened_associations = []
+    
+    def get_descendants(class_name):
+        """Get all descendants of a class"""
+        descendants = []
+        for child in parent_to_children.get(class_name, []):
+            if child not in abstract_classes:
+                descendants.append(child)
+            descendants.extend(get_descendants(child))
+        return descendants
+    
+    for assoc in associations:
+        from_c = assoc.get('from')
+        to_c = assoc.get('to')
+        
+        # Skip if involving only abstract classes
+        if from_c in abstract_classes and to_c in abstract_classes:
+            continue
+        
+        # If 'from' is abstract, skip (shouldn't have outgoing)
+        # If 'to' is abstract, skip
+        if from_c in abstract_classes or to_c in abstract_classes:
+            continue
+        
+        # Add original association
+        flattened_associations.append(assoc)
+        
+        # If 'to' class has children (concrete inheritance), copy relationship to children
+        to_descendants = get_descendants(to_c)
+        for desc in to_descendants:
+            new_assoc = assoc.copy()
+            new_assoc['to'] = desc
+            flattened_associations.append(new_assoc)
+        
+        # If 'from' class has children, copy relationship from children
+        from_descendants = get_descendants(from_c)
+        for desc in from_descendants:
+            new_assoc = assoc.copy()
+            new_assoc['from'] = desc
+            flattened_associations.append(new_assoc)
+    
+    # Generate PlantUML
+    lines = [
+        f'@startuml {model_name.replace(" ", "_")}_Graph',
+        '',
+        "' Graph Schema styling (Neo4j property graph)",
+        "' Professor's format: straight lines, NO arrowheads, direction in text",
+        'scale 1.2',
+        'skinparam dpi 150',
+        '',
+        "' Use polyline for straighter lines that stay in bounds",
+        'skinparam linetype polyline',
+        '',
+        "' Remove all arrowheads from lines",
+        'skinparam ArrowHeadColor transparent',
+        '',
+        'skinparam class {',
+        '    BackgroundColor #90EE90',  # Light green for graph nodes
+        '    BorderColor #000000',
+        '    FontName Arial',
+        '    FontSize 11',
+        '    AttributeFontSize 10',
+        '}',
+        'skinparam package {',
+        '    BackgroundColor white',
+        '    BorderColor #000000',
+        '    FontSize 12',
+        '    FontStyle bold',
+        '}',
+        'skinparam nodesep 100',
+        'skinparam ranksep 80',
+        'skinparam minClassWidth 100',
+        '',
+        "' Hide class circle icon (C), methods, and stereotypes",
+        'hide circle',
+        'hide methods',
+        'hide stereotype',
+        '',
+        f'package "pkg Graph Schema" <<Frame>> {{',
+        '',
+    ]
+    
+    # Node types (flattened classes)
+    for class_name, class_def in flattened_classes.items():
+        lines.append(f'  class {class_name} {{')
+        for attr in class_def.get('attributes', []):
+            attr_type = attr.get("type", "String")
+            lines.append(f'    - {attr["name"]} : {attr_type}')
+        lines.append('  }')
+        lines.append('')
+    
+    # Relationships (with Graph Schema naming) - INSIDE package
+    lines.append('')
+    seen_relationships = set()  # Avoid duplicates
+    
+    for assoc in flattened_associations:
+        from_c = assoc.get('from')
+        to_c = assoc.get('to')
+        assoc_type = assoc.get('type', 'association')
+        to_role = assoc.get('toRole', '')
+        name = assoc.get('name', '')
+        
+        # Skip if classes don't exist in flattened
+        if from_c not in flattened_classes or to_c not in flattened_classes:
+            continue
+        
+        # Derive relationship name
+        if assoc_type == 'composition':
+            rel_name = 'CONTAINS'
+        elif to_role:
+            # Convert role to relationship name: "purchases" -> "HAS_PURCHASE"
+            singular = to_role.rstrip('s')  # Simple singularize
+            rel_name = f'HAS_{singular.upper()}'
+        elif name:
+            rel_name = name.upper().replace(' ', '_')
+        else:
+            rel_name = 'RELATES_TO'
+        
+        # Create unique key to avoid duplicates
+        rel_key = (from_c, to_c, rel_name)
+        if rel_key in seen_relationships:
+            continue
+        seen_relationships.add(rel_key)
+        
+        # Graph Schema: plain lines, direction determined by actual position
+        # Symbol will be set in second pass based on SVG positions
+        
+        if from_c == to_c:
+            # Self-loop: always points right
+            lines.append(f'{from_c} -- {to_c} : {rel_name} ►')
+        else:
+            # Use placeholder {DIR} - will be replaced in second pass
+            lines.append(f'{from_c} -- {to_c} : {rel_name} {{DIR:{from_c}:{to_c}}}')
+    
+    lines.append('')
+    lines.append('}')  # Close package
+    lines.append('')
+    lines.append("' Note: Graph schemas have NO inheritance arrows")
+    lines.append("' Inheritance is flattened (properties + relationships copied)")
+    lines.append("' Direction: ► = right, ◄ = left, ▼ = down, ▲ = up")
+    lines.append('')
+    lines.append('@enduml')
+    
+    puml_content = '\n'.join(lines)
+    
+    # Two-pass: if there are {DIR:...} placeholders, resolve them
+    if '{DIR:' in puml_content:
+        puml_content = resolve_directions(puml_content, list(flattened_classes.keys()))
+    
+    return puml_content
+
+
+def resolve_directions(puml_content, class_names):
+    """
+    Two-pass direction resolution:
+    1. Generate SVG from PlantUML (with placeholder symbols)
+    2. Parse SVG to get class positions
+    3. Replace placeholders with correct direction symbols
+    """
+    import tempfile
+    import os
+    
+    # Replace placeholders with temporary symbol for first pass
+    temp_puml = re.sub(r'\{DIR:[^}]+\}', '?', puml_content)
+    
+    # Find plantuml.jar
+    script_dir = Path(__file__).resolve().parent.parent
+    plantuml_jar = script_dir / 'plantuml.jar'
+    
+    if not plantuml_jar.exists():
+        # Can't do two-pass, use default
+        return re.sub(r'\{DIR:[^}]+\}', '▼', puml_content)
+    
+    try:
+        # Generate SVG in temp directory
+        temp_dir = tempfile.mkdtemp()
+        temp_puml_path = os.path.join(temp_dir, 'graph.puml')
+        
+        with open(temp_puml_path, 'w') as f:
+            f.write(temp_puml)
+        
+        # Run PlantUML to generate SVG
+        result = subprocess.run(
+            ['java', '-jar', str(plantuml_jar), '-tsvg', '-o', temp_dir, temp_puml_path],
+            capture_output=True,
+            timeout=30
+        )
+        
+        # Find the generated SVG (PlantUML names it after @startuml name)
+        svg_files = [f for f in os.listdir(temp_dir) if f.endswith('.svg')]
+        temp_svg_path = os.path.join(temp_dir, svg_files[0]) if svg_files else None
+        
+        if temp_svg_path and os.path.exists(temp_svg_path):
+            with open(temp_svg_path, 'r') as f:
+                svg_content = f.read()
+            
+            # Get positions
+            positions = get_class_positions_from_svg(svg_content, class_names)
+            
+            # Replace placeholders with correct symbols
+            def replace_dir(match):
+                parts = match.group(0)[5:-1].split(':')  # Extract from {DIR:from:to}
+                from_c, to_c = parts[0], parts[1]
+                from_pos = positions.get(from_c)
+                to_pos = positions.get(to_c)
+                return get_direction_symbol(from_pos, to_pos)
+            
+            puml_content = re.sub(r'\{DIR:[^}]+\}', replace_dir, puml_content)
+            
+            # Cleanup
+            os.unlink(temp_svg_path)
+        
+        os.unlink(temp_puml_path)
+        os.rmdir(temp_dir)
+        
+    except Exception as e:
+        # Fall back to default direction
+        puml_content = re.sub(r'\{DIR:[^}]+\}', '▼', puml_content)
+    
+    return puml_content
 
 
 if __name__ == '__main__':
