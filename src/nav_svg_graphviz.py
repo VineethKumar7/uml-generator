@@ -159,7 +159,7 @@ class GraphvizSVGGenerator:
         """Generate Graphviz DOT format with icon spacers as invisible nodes"""
         lines = ['digraph G {']
         lines.append('  rankdir=TB;')  # Top to bottom
-        lines.append('  splines=ortho;')  # Orthogonal edges
+        lines.append('  splines=polyline;')  # Polyline edges (more robust than ortho)
         lines.append('  nodesep=1.0;')  # Increased horizontal separation
         lines.append('  ranksep=1.2;')  # Increased vertical separation for labels
         lines.append('  node [shape=box];')
@@ -344,10 +344,34 @@ class GraphvizSVGGenerator:
         plain = self._run_graphviz(dot)
         self._parse_plain_output(plain)
         
-        # Add margins
-        min_x = min(b.x for b in self.boxes.values())
-        min_y = min(b.y for b in self.boxes.values())
+        # Calculate bounding box including ALL elements (boxes + edge points + labels)
+        all_x = []
+        all_y = []
         
+        # Include box positions
+        for box in self.boxes.values():
+            all_x.extend([box.x, box.x + box.width])
+            all_y.extend([box.y - 20, box.y + box.height])  # -20 for icon above
+        
+        # Include edge routing points
+        for link in self.links:
+            for px, py in link.points:
+                all_x.append(px)
+                all_y.append(py)
+            # Include label position
+            if link.label_x and link.label_y:
+                all_x.append(link.label_x)
+                all_y.append(link.label_y)
+        
+        if not all_x or not all_y:
+            return 400, 300  # Default size
+        
+        min_x = min(all_x)
+        min_y = min(all_y)
+        max_x_raw = max(all_x)
+        max_y_raw = max(all_y)
+        
+        # Add margins - offset everything so minimum is at margin
         offset_x = self.config.margin - min_x
         offset_y = self.config.margin + 40 - min_y  # Extra for entry point
         
@@ -360,11 +384,11 @@ class GraphvizSVGGenerator:
             link.label_x += offset_x
             link.label_y += offset_y
         
-        # Calculate total dimensions
-        max_x = max(b.x + b.width for b in self.boxes.values())
-        max_y = max(b.y + b.height for b in self.boxes.values())
+        # Calculate total dimensions (including edge points now)
+        max_x = max_x_raw + offset_x + self.config.margin
+        max_y = max_y_raw + offset_y + self.config.margin
         
-        return max_x + self.config.margin, max_y + self.config.margin
+        return max_x, max_y
     
     def generate_svg(self, title: str = "Navigation Model") -> str:
         width, height = self.calculate_layout()
