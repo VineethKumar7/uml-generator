@@ -7,7 +7,14 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to get actual script directory
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_SOURCE" ]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 PLANTUML_JAR="$SCRIPT_DIR/plantuml.jar"
 PLANTUML_URL="https://github.com/plantuml/plantuml/releases/download/v1.2024.8/plantuml-1.2024.8.jar"
 
@@ -21,10 +28,11 @@ show_help() {
     cat << 'EOF'
 UML Domain Model Generator
 
-Generate UML Class Diagrams or Graph Schemas from simple YAML definitions.
+Generate UML Class Diagrams, Graph Schemas, or Database ER Diagrams.
 
 Usage:
   uml-gen <model.yaml> [options]
+  uml-gen <schema.json> --schema [options]
 
 Options:
   -o, --output <name>   Output base name (without extension)
@@ -33,15 +41,27 @@ Options:
   --svg                 Generate SVG image
   --xmi                 Generate XMI file
   --plantuml            Generate PlantUML file
+  --tables              Generate Markdown table documentation (O/R mapping)
+  --sql                 Generate SQL DDL (CREATE TABLE statements)
   --all                 Generate all formats
   --graph               Generate Graph Schema (Neo4j property graph)
+  --nav                 Generate UWE Navigation Model diagram
+  --schema              Database ER diagram mode (JSON input)
+  --per-table           Generate individual table images (use with --schema)
   --example             Show example YAML format
+  --schema-example      Show example JSON schema format
   --graph-rules         Show Graph Schema conversion rules
+  --nav-example         Show example Navigation Model YAML format
   -h, --help            Show this help
 
 Examples:
   uml-gen model.yaml --png              # Generate UML PNG
+  uml-gen model.yaml --tables           # Generate database schema docs
+  uml-gen model.yaml --sql              # Generate SQL CREATE TABLE
   uml-gen model.yaml --graph --png      # Generate Graph Schema PNG
+  uml-gen model.yaml --nav --png        # Generate UWE Navigation diagram
+  uml-gen schema.json --schema --png    # Generate DB ER diagram
+  uml-gen schema.json --schema --per-table --png  # Individual table PNGs
   uml-gen model.yaml --all              # All formats (UML)
   uml-gen model.yaml -o output/diagram  # Custom output path
 
@@ -91,6 +111,47 @@ generalizations:
 EOF
 }
 
+show_schema_example() {
+    cat << 'EOF'
+Example JSON format for database ER diagrams (--schema mode):
+
+{
+  "name": "E-Commerce Database",
+  "tables": {
+    "Users": {
+      "columns": {
+        "id": { "type": "INT", "pk": true, "autoIncrement": true },
+        "email": { "type": "VARCHAR(255)", "notNull": true, "unique": true },
+        "created_at": { "type": "TIMESTAMP", "default": "NOW()" }
+      },
+      "exampleData": [
+        { "id": 1, "email": "john@example.com", "created_at": "2024-01-01" },
+        { "id": 2, "email": "jane@example.com", "created_at": "2024-01-02" }
+      ]
+    },
+    "Orders": {
+      "columns": {
+        "id": { "type": "INT", "pk": true },
+        "user_id": { "type": "INT", "fk": "Users.id", "notNull": true },
+        "total": { "type": "DECIMAL(10,2)" }
+      },
+      "exampleData": [
+        { "id": 1, "user_id": 1, "total": 99.99 }
+      ]
+    }
+  },
+  "relations": [
+    { "from": "Orders", "to": "Users", "fromCol": "user_id", "toCol": "id", "type": "many-to-one" }
+  ]
+}
+
+Column markers: pk (primary key), fk (foreign key), notNull, unique, autoIncrement, default
+Relation types: one-to-one, one-to-many, many-to-one, many-to-many
+
+Use --per-table to generate individual table images with example data.
+EOF
+}
+
 show_graph_rules() {
     cat << 'EOF'
 Graph Schema Conversion Rules (from OO Schema)
@@ -128,6 +189,116 @@ Example:
 EOF
 }
 
+show_nav_example() {
+    cat << 'EOF'
+# UWE Navigation Model YAML format for uml-gen --nav
+
+name: "Flight Reservation System"
+entryPoint: HomePage
+
+# Navigation pages (<<navigationClass>>)
+pages:
+  HomePage:
+    isHome: true
+    attributes:
+      - welcomeMessage: String
+  
+  FlightDetails:
+    attributes:
+      - flightInfo: String
+    domainRef: Flight  # ● prefix for domain model reference
+  
+  PassengerData:
+    attributes:
+      - name: String
+      - passportId: String
+  
+  TicketConfirmation:
+    attributes:
+      - ticketId: String
+
+# Menus (<<menu>>)
+menus:
+  MainMenu:
+    isLandmark: true
+    ownedBy: HomePage  # Containment
+  
+  BookingMenu:
+    ownedBy: FlightDetails
+
+# Index lists (<<index>>)
+indexes:
+  FlightList:
+    ref: "flights: Flight[*]"  # Domain reference with [*] collection
+    selectsTo: FlightDetails
+
+# Query/Search forms (<<query>>)
+queries:
+  SearchFlight:
+    attributes:
+      - origin: String
+      - destination: String
+      - date: Date
+    resultsTo: FlightList
+
+# Process classes (<<processClass>>)
+processes:
+  Login:
+    attributes:
+      - username: String
+      - password: String
+    outcomes:
+      - condition: success
+        target: HomePage
+      - condition: fail
+        target: LoginPage
+
+# Links between nodes
+links:
+  # Navigation links (solid line, no stereotype)
+  - from: MainMenu
+    to: FlightList
+    name: aircraft information
+    type: navigation
+  
+  # Process links (solid line + <<processlink>> stereotype)
+  - from: MainMenu
+    to: SearchFlight
+    name: searchFlight
+    type: process
+  
+  - from: SearchFlight
+    to: FlightList
+    name: search
+    type: process
+  
+  # Conditional process link
+  - from: BookingMenu
+    to: TicketConfirmation
+    name: book
+    type: process
+    condition: passenger data and seat complete
+  
+  # Containment (composition diamond ◆)
+  - from: HomePage
+    to: MainMenu
+    type: containment
+
+# Stereotypes:
+#   <<navigationClass>> - viewable page
+#   <<menu>>           - navigation hub
+#   <<index>>          - list/selection page
+#   <<query>>          - search form
+#   <<processClass>>   - backend workflow
+#   <<processlink>>    - link that modifies data
+
+# Link types:
+#   navigation  - browsing (solid line)
+#   process     - executes code (solid + <<processlink>>)
+#   containment - menu owned by page (diamond ◆)
+EOF
+}
+
 # Check dependencies
 check_deps() {
     if ! command -v python3 &> /dev/null; then
@@ -149,6 +320,270 @@ ensure_plantuml() {
     fi
 }
 
+# Generate individual table diagrams with example data
+generate_per_table_diagrams() {
+    if ! command -v node &> /dev/null; then
+        echo -e "${RED}Error: Node.js is required for schema diagrams${NC}"
+        exit 1
+    fi
+    
+    ensure_plantuml
+    
+    # Generate individual PlantUML files for each table
+    node - "$INPUT_FILE" "$OUTPUT_BASE" "$GEN_PNG" "$GEN_JPG" "$GEN_SVG" "$PLANTUML_JAR" << 'NODEJS'
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+const [,, inputFile, outputBase, genPng, genJpg, genSvg, plantumlJar] = process.argv;
+const schema = JSON.parse(fs.readFileSync(inputFile, 'utf8'));
+const outputDir = path.dirname(outputBase);
+
+// Create tables subfolder
+const tablesDir = path.join(outputDir, 'tables');
+if (!fs.existsSync(tablesDir)) {
+    fs.mkdirSync(tablesDir, { recursive: true });
+}
+
+function generateTablePuml(tableName, table) {
+    let puml = '@startuml\n';
+    puml += 'skinparam backgroundColor white\n';
+    puml += 'skinparam defaultFontName Arial\n';
+    puml += 'skinparam defaultFontSize 12\n';
+    puml += 'skinparam dpi 150\n\n';
+    puml += 'skinparam entity {\n';
+    puml += '  BackgroundColor #FFFFCC\n';
+    puml += '  BorderColor black\n';
+    puml += '}\n\n';
+    
+    // Generate entity
+    puml += `entity "${tableName}" as ${tableName.replace(/[^a-zA-Z0-9_]/g, '_')} {\n`;
+    
+    const columns = table.columns || {};
+    const pkCols = [], regularCols = [];
+    
+    for (const [colName, colDef] of Object.entries(columns)) {
+        const col = typeof colDef === 'string' ? { type: colDef } : colDef;
+        const markers = [];
+        if (col.pk) markers.push('PK');
+        if (col.fk) markers.push('FK');
+        if (col.notNull && !col.pk) markers.push('NN');
+        
+        let markerStr = '';
+        if (markers.length) {
+            markerStr = ` <<${markers.join(', ')}>>`;
+        }
+        
+        // Show FK reference
+        let fkRef = '';
+        if (col.fk) {
+            fkRef = ` → ${col.fk}`;
+        }
+        
+        const defaultStr = col.default ? ` = ${col.default}` : '';
+        const line = `  ${col.pk ? '*' : ''}${colName} : ${col.type}${markerStr}${fkRef}${defaultStr}`;
+        col.pk ? pkCols.push(line) : regularCols.push(line);
+    }
+    
+    if (pkCols.length) {
+        puml += pkCols.join('\n') + '\n';
+        if (regularCols.length) puml += '  --\n';
+    }
+    puml += regularCols.join('\n') + '\n}\n\n';
+    
+    // Add example data as a note if available
+    const exampleData = table.exampleData || [];
+    if (exampleData.length > 0) {
+        const alias = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+        puml += `note bottom of ${alias}\n`;
+        puml += '    <b>Example Data:</b>\n';
+        
+        // Get column names from first row
+        const colNames = Object.keys(exampleData[0]);
+        
+        // Header row
+        puml += '    |= ' + colNames.join(' |= ') + ' |\n';
+        
+        // Data rows
+        for (const row of exampleData) {
+            const values = colNames.map(col => {
+                const val = row[col];
+                return val === null ? 'NULL' : String(val);
+            });
+            puml += '    | ' + values.join(' | ') + ' |\n';
+        }
+        
+        puml += 'end note\n';
+    }
+    
+    puml += '\n@enduml';
+    return puml;
+}
+
+// Generate each table
+const generated = [];
+for (const [tableName, table] of Object.entries(schema.tables || {})) {
+    const safeName = tableName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const pumlFile = path.join(tablesDir, `${safeName}_table.puml`);
+    const puml = generateTablePuml(tableName, table);
+    fs.writeFileSync(pumlFile, puml);
+    
+    // Generate images
+    if (genPng === 'true') {
+        const pngFile = path.join(tablesDir, `${safeName}_table.png`);
+        try {
+            execSync(`java -jar "${plantumlJar}" -tpng "${pumlFile}"`, { stdio: 'pipe' });
+            generated.push(`tables/${safeName}_table.png`);
+        } catch (e) {
+            console.error(`Failed to generate PNG for ${tableName}`);
+        }
+    }
+    
+    if (genJpg === 'true') {
+        const jpgFile = path.join(tablesDir, `${safeName}_table.jpg`);
+        try {
+            execSync(`java -jar "${plantumlJar}" -tjpg "${pumlFile}"`, { stdio: 'pipe' });
+            generated.push(`tables/${safeName}_table.jpg`);
+        } catch (e) {
+            console.error(`Failed to generate JPG for ${tableName}`);
+        }
+    }
+    
+    if (genSvg === 'true') {
+        const svgFile = path.join(tablesDir, `${safeName}_table.svg`);
+        try {
+            execSync(`java -jar "${plantumlJar}" -tsvg "${pumlFile}"`, { stdio: 'pipe' });
+            generated.push(`tables/${safeName}_table.svg`);
+        } catch (e) {
+            console.error(`Failed to generate SVG for ${tableName}`);
+        }
+    }
+}
+
+// Output generated files
+for (const f of generated) {
+    console.log(`GENERATED:${f}`);
+}
+NODEJS
+
+    # Parse output and print success messages
+    while IFS= read -r line; do
+        if [[ "$line" == GENERATED:* ]]; then
+            FILE="${line#GENERATED:}"
+            echo -e "${GREEN}✅ Generated: ${OUTPUT_DIR}/${FILE}${NC}"
+        fi
+    done
+}
+
+# Generate DB schema diagram from JSON
+generate_schema_diagram() {
+    if ! command -v node &> /dev/null; then
+        echo -e "${RED}Error: Node.js is required for schema diagrams${NC}"
+        exit 1
+    fi
+    
+    PUML_FILE="${OUTPUT_BASE}.puml"
+    
+    # Generate PlantUML from JSON using inline Node.js
+    node - "$INPUT_FILE" "$PUML_FILE" << 'NODEJS'
+const fs = require('fs');
+const path = require('path');
+
+const [,, inputFile, pumlFile] = process.argv;
+const schema = JSON.parse(fs.readFileSync(inputFile, 'utf8'));
+
+let puml = '@startuml\n';
+puml += '!theme plain\n';
+puml += 'skinparam linetype ortho\n';
+puml += 'skinparam roundcorner 5\n';
+puml += 'skinparam class {\n';
+puml += '  BackgroundColor #FFFFCC\n';
+puml += '  BorderColor #333333\n';
+puml += '  ArrowColor #333333\n';
+puml += '}\n';
+puml += 'hide circle\n';
+puml += 'hide methods\n\n';
+
+if (schema.name) puml += `title ${schema.name}\n\n`;
+
+// Generate tables
+for (const [tableName, table] of Object.entries(schema.tables || {})) {
+    puml += `entity "${tableName}" as ${tableName} {\n`;
+    const columns = table.columns || {};
+    const pkCols = [], regularCols = [];
+    
+    for (const [colName, colDef] of Object.entries(columns)) {
+        const col = typeof colDef === 'string' ? { type: colDef } : colDef;
+        const markers = [];
+        if (col.pk) markers.push('PK');
+        if (col.fk) markers.push('FK');
+        if (col.notNull) markers.push('NN');
+        if (col.unique) markers.push('UQ');
+        if (col.autoIncrement) markers.push('AI');
+        
+        const markerStr = markers.length ? ` <<${markers.join(', ')}>>` : '';
+        const defaultStr = col.default ? ` = ${col.default}` : '';
+        const line = `  ${colName} : ${col.type}${markerStr}${defaultStr}`;
+        col.pk ? pkCols.push(line) : regularCols.push(line);
+    }
+    
+    if (pkCols.length) {
+        puml += pkCols.join('\n') + '\n';
+        if (regularCols.length) puml += '  --\n';
+    }
+    puml += regularCols.join('\n') + '\n}\n\n';
+}
+
+// Generate relationships (solid lines)
+for (const rel of schema.relations || []) {
+    let arrow;
+    switch (rel.type) {
+        case 'one-to-one': arrow = '||--||'; break;
+        case 'one-to-many': arrow = '||--o{'; break;
+        case 'many-to-one': arrow = '}o--||'; break;
+        case 'many-to-many': arrow = '}o--o{'; break;
+        default: arrow = '--';
+    }
+    const label = rel.fromCol && rel.toCol ? ` : ${rel.fromCol} > ${rel.toCol}` : '';
+    puml += `${rel.from} ${arrow} ${rel.to}${label}\n`;
+}
+
+puml += '\n@enduml';
+fs.writeFileSync(pumlFile, puml);
+console.log('PlantUML generated');
+NODEJS
+
+    if [[ ! -f "$PUML_FILE" ]]; then
+        echo -e "${RED}Error: Failed to generate PlantUML${NC}"
+        exit 1
+    fi
+
+    ensure_plantuml
+
+    # Generate requested formats
+    if $GEN_PNG || ( ! $GEN_JPG && ! $GEN_SVG && ! $GEN_PUML ); then
+        java -jar "$PLANTUML_JAR" -tpng -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.png" 2>/dev/null
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.png${NC}"
+        echo "MEDIA: ${OUTPUT_BASE}.png"
+    fi
+
+    if $GEN_JPG; then
+        java -jar "$PLANTUML_JAR" -tjpg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.jpg" 2>/dev/null
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.jpg${NC}"
+    fi
+
+    if $GEN_SVG; then
+        java -jar "$PLANTUML_JAR" -tsvg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.svg" 2>/dev/null
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.svg${NC}"
+    fi
+
+    if $GEN_PUML; then
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.puml${NC}"
+    else
+        rm -f "$PUML_FILE"
+    fi
+}
+
 # Main logic
 main() {
     # Handle special flags first
@@ -161,8 +596,16 @@ main() {
             show_example
             exit 0
             ;;
+        --schema-example)
+            show_schema_example
+            exit 0
+            ;;
         --graph-rules)
             show_graph_rules
+            exit 0
+            ;;
+        --nav-example)
+            show_nav_example
             exit 0
             ;;
         "")
@@ -191,6 +634,11 @@ main() {
     GEN_XMI=false
     GEN_PUML=false
     GEN_GRAPH=false
+    GEN_NAV=false
+    GEN_TABLES=false
+    GEN_SQL=false
+    GEN_SCHEMA=false
+    GEN_PER_TABLE=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -222,12 +670,34 @@ main() {
                 GEN_GRAPH=true
                 shift
                 ;;
+            --nav)
+                GEN_NAV=true
+                shift
+                ;;
+            --tables)
+                GEN_TABLES=true
+                shift
+                ;;
+            --sql)
+                GEN_SQL=true
+                shift
+                ;;
+            --schema)
+                GEN_SCHEMA=true
+                shift
+                ;;
+            --per-table)
+                GEN_PER_TABLE=true
+                shift
+                ;;
             --all)
                 GEN_PNG=true
                 GEN_JPG=true
                 GEN_SVG=true
                 GEN_XMI=true
                 GEN_PUML=true
+                GEN_TABLES=true
+                GEN_SQL=true
                 shift
                 ;;
             *)
@@ -238,7 +708,7 @@ main() {
     done
 
     # Default: if no format specified, generate PNG
-    if ! $GEN_PNG && ! $GEN_JPG && ! $GEN_SVG && ! $GEN_XMI && ! $GEN_PUML; then
+    if ! $GEN_PNG && ! $GEN_JPG && ! $GEN_SVG && ! $GEN_XMI && ! $GEN_PUML && ! $GEN_TABLES && ! $GEN_SQL; then
         GEN_PNG=true
     fi
 
@@ -246,20 +716,89 @@ main() {
     if [[ -z "$OUTPUT_BASE" ]]; then
         OUTPUT_BASE="${INPUT_FILE%.yaml}"
         OUTPUT_BASE="${OUTPUT_BASE%.yml}"
+        OUTPUT_BASE="${OUTPUT_BASE%.json}"
     fi
 
     OUTPUT_DIR=$(dirname "$OUTPUT_BASE")
     mkdir -p "$OUTPUT_DIR"
 
+    # Handle navigation model mode
+    if $GEN_NAV; then
+        PUML_FILE="${OUTPUT_BASE}.puml"
+        
+        # Generate PlantUML using nav generator
+        python3 "$SCRIPT_DIR/src/nav_generator.py" "$INPUT_FILE" -o "$OUTPUT_BASE"
+        
+        if [[ ! -f "$PUML_FILE" ]]; then
+            echo -e "${RED}Error: Failed to generate Navigation PlantUML${NC}"
+            exit 1
+        fi
+        
+        ensure_plantuml
+        
+        # Generate images
+        if $GEN_PNG || ( ! $GEN_JPG && ! $GEN_SVG && ! $GEN_PUML ); then
+            java -jar "$PLANTUML_JAR" -tpng -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.png" 2>/dev/null
+            echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.png${NC}"
+        fi
+        
+        if $GEN_JPG; then
+            java -jar "$PLANTUML_JAR" -tjpg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.jpg" 2>/dev/null
+            echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.jpg${NC}"
+        fi
+        
+        if $GEN_SVG; then
+            java -jar "$PLANTUML_JAR" -tsvg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.svg" 2>/dev/null
+            echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.svg${NC}"
+        fi
+        
+        if $GEN_PUML; then
+            echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.puml${NC}"
+        else
+            rm -f "$PUML_FILE"
+        fi
+        
+        exit 0
+    fi
+
+    # Handle schema mode (JSON input for DB diagrams)
+    if $GEN_SCHEMA; then
+        if $GEN_PER_TABLE; then
+            generate_per_table_diagrams
+        else
+            generate_schema_diagram
+        fi
+        exit 0
+    fi
+
     # Always generate PlantUML first (needed for images)
     PUML_FILE="${OUTPUT_BASE}.puml"
     
-    # Run Python generator
-    if $GEN_GRAPH; then
-        python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml --graph
-    else
-        python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}.xmi" --plantuml
+    # Build Python command with requested options
+    PYTHON_OPTS=""
+    if $GEN_PUML || $GEN_PNG || $GEN_JPG || $GEN_SVG; then
+        PYTHON_OPTS="$PYTHON_OPTS --plantuml"
     fi
+    if $GEN_XMI; then
+        PYTHON_OPTS="$PYTHON_OPTS --xmi"
+    fi
+    if $GEN_TABLES; then
+        PYTHON_OPTS="$PYTHON_OPTS --tables"
+    fi
+    if $GEN_SQL; then
+        PYTHON_OPTS="$PYTHON_OPTS --sql"
+    fi
+    if $GEN_GRAPH; then
+        PYTHON_OPTS="$PYTHON_OPTS --graph"
+    fi
+    
+    # Default to plantuml if only images requested
+    if [[ -z "$PYTHON_OPTS" ]] || [[ "$PYTHON_OPTS" == " --graph" ]]; then
+        PYTHON_OPTS="$PYTHON_OPTS --plantuml"
+    fi
+    
+    # Run Python generator
+    python3 "$SCRIPT_DIR/src/domain2xmi.py" "$INPUT_FILE" -o "${OUTPUT_BASE}" $PYTHON_OPTS
     
     # Move .puml if generated in wrong location
     INPUT_DIR=$(dirname "$INPUT_FILE")
@@ -267,8 +806,13 @@ main() {
     INPUT_NAME="${INPUT_NAME%.yml}"
     INPUT_PUML="${INPUT_DIR}/${INPUT_NAME}.puml"
     
-    if [[ -f "$INPUT_PUML" && "$INPUT_PUML" != "$PUML_FILE" ]]; then
-        mv "$INPUT_PUML" "$PUML_FILE"
+    # Use realpath to compare actual file locations (avoid "same file" error)
+    if [[ -f "$INPUT_PUML" ]]; then
+        REAL_INPUT_PUML=$(realpath "$INPUT_PUML" 2>/dev/null || echo "$INPUT_PUML")
+        REAL_PUML_FILE=$(realpath "$PUML_FILE" 2>/dev/null || echo "$PUML_FILE")
+        if [[ "$REAL_INPUT_PUML" != "$REAL_PUML_FILE" ]]; then
+            mv "$INPUT_PUML" "$PUML_FILE"
+        fi
     fi
     
     # Ensure PUML file exists
@@ -276,7 +820,11 @@ main() {
         # Try to find it
         FOUND_PUML=$(find "$INPUT_DIR" -name "*.puml" -newer "$INPUT_FILE" 2>/dev/null | head -1)
         if [[ -n "$FOUND_PUML" ]]; then
-            mv "$FOUND_PUML" "$PUML_FILE"
+            REAL_FOUND=$(realpath "$FOUND_PUML" 2>/dev/null || echo "$FOUND_PUML")
+            REAL_TARGET=$(realpath "$PUML_FILE" 2>/dev/null || echo "$PUML_FILE")
+            if [[ "$REAL_FOUND" != "$REAL_TARGET" ]]; then
+                mv "$FOUND_PUML" "$PUML_FILE"
+            fi
         fi
     fi
 
@@ -316,6 +864,16 @@ main() {
     # Report PlantUML
     if $GEN_PUML; then
         echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.puml${NC}"
+    fi
+
+    # Report Tables (Markdown)
+    if $GEN_TABLES; then
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.tables.md${NC}"
+    fi
+
+    # Report SQL
+    if $GEN_SQL; then
+        echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.sql${NC}"
     fi
 
     # Cleanup if not needed
