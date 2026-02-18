@@ -45,12 +45,15 @@ Options:
   --sql                 Generate SQL DDL (CREATE TABLE statements)
   --all                 Generate all formats
   --graph               Generate Graph Schema (Neo4j property graph)
+  --instance            Generate Example Graph (instance diagram with actual values)
   --nav                 Generate UWE Navigation Model diagram
+  --direct              Use direct SVG generation (precise positioning, no PlantUML)
   --schema              Database ER diagram mode (JSON input)
   --per-table           Generate individual table images (use with --schema)
   --example             Show example YAML format
   --schema-example      Show example JSON schema format
   --graph-rules         Show Graph Schema conversion rules
+  --instance-example    Show example Instance Graph YAML format
   --nav-example         Show example Navigation Model YAML format
   -h, --help            Show this help
 
@@ -59,7 +62,9 @@ Examples:
   uml-gen model.yaml --tables           # Generate database schema docs
   uml-gen model.yaml --sql              # Generate SQL CREATE TABLE
   uml-gen model.yaml --graph --png      # Generate Graph Schema PNG
-  uml-gen model.yaml --nav --png        # Generate UWE Navigation diagram
+  uml-gen instance.yaml --instance --png  # Generate Example Graph PNG
+  uml-gen model.yaml --nav --png        # Generate UWE Navigation diagram (PlantUML)
+  uml-gen model.yaml --nav --direct --png  # Navigation with precise SVG (recommended)
   uml-gen schema.json --schema --png    # Generate DB ER diagram
   uml-gen schema.json --schema --per-table --png  # Individual table PNGs
   uml-gen model.yaml --all              # All formats (UML)
@@ -186,6 +191,101 @@ Graph Schema Conversion Rules (from OO Schema)
 Example:
   OO:    Person --(*  - purchases)--> Purchase
   Graph: Person --- HAS_PURCHASE ► --- Purchase
+EOF
+}
+
+show_instance_example() {
+    cat << 'EOF'
+# Example Graph (Instance Diagram) YAML format for uml-gen --instance
+# 
+# Creates instance diagrams showing actual data values:
+# - Labels with colon prefix: :Person
+# - Properties with equals: name = John
+# - Plain lines with relationship names (no arrowheads)
+
+name: "Online Shop Example"
+
+nodes:
+  - id: john
+    label: Person
+    properties:
+      name: John
+      
+  - id: alice
+    label: Person
+    properties:
+      name: Alice
+
+  - id: bob
+    label: Person
+    properties:
+      name: Bob
+      
+  - id: purchase1
+    label: Purchase
+    properties:
+      quantity: 1
+      
+  - id: purchase2
+    label: Purchase
+    properties:
+      quantity: 15
+      
+  - id: laptop1
+    label: Product
+    properties:
+      name: Laptop 1
+      price: 1500
+
+  - id: apple1
+    label: Food
+    properties:
+      name: Apple
+      price: 1
+      bestBefore: 2023-04-15
+      
+  - id: cat_laptop
+    label: Category
+    properties:
+      name: Laptop
+      
+  - id: cat_veg
+    label: Category
+    properties:
+      name: Vegetables
+
+edges:
+  - from: john
+    to: alice
+    type: HAS_FRIEND
+    
+  - from: alice
+    to: bob
+    type: HAS_FRIEND
+    
+  - from: john
+    to: purchase1
+    type: HAS_PURCHASE
+    
+  - from: alice
+    to: purchase2
+    type: HAS_PURCHASE
+    
+  - from: purchase1
+    to: laptop1
+    type: HAS_PRODUCT
+    
+  - from: purchase2
+    to: apple1
+    type: HAS_PRODUCT
+    
+  - from: cat_laptop
+    to: laptop1
+    type: CONTAINS
+    
+  - from: cat_veg
+    to: apple1
+    type: CONTAINS
 EOF
 }
 
@@ -604,6 +704,10 @@ main() {
             show_graph_rules
             exit 0
             ;;
+        --instance-example)
+            show_instance_example
+            exit 0
+            ;;
         --nav-example)
             show_nav_example
             exit 0
@@ -634,11 +738,13 @@ main() {
     GEN_XMI=false
     GEN_PUML=false
     GEN_GRAPH=false
+    GEN_INSTANCE=false
     GEN_NAV=false
     GEN_TABLES=false
     GEN_SQL=false
     GEN_SCHEMA=false
     GEN_PER_TABLE=false
+    GEN_DIRECT=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -670,6 +776,10 @@ main() {
                 GEN_GRAPH=true
                 shift
                 ;;
+            --instance)
+                GEN_INSTANCE=true
+                shift
+                ;;
             --nav)
                 GEN_NAV=true
                 shift
@@ -688,6 +798,10 @@ main() {
                 ;;
             --per-table)
                 GEN_PER_TABLE=true
+                shift
+                ;;
+            --direct)
+                GEN_DIRECT=true
                 shift
                 ;;
             --all)
@@ -722,15 +836,15 @@ main() {
     OUTPUT_DIR=$(dirname "$OUTPUT_BASE")
     mkdir -p "$OUTPUT_DIR"
 
-    # Handle navigation model mode
-    if $GEN_NAV; then
+    # Handle instance graph (example graph) mode
+    if $GEN_INSTANCE; then
         PUML_FILE="${OUTPUT_BASE}.puml"
         
-        # Generate PlantUML using nav generator
-        python3 "$SCRIPT_DIR/src/nav_generator.py" "$INPUT_FILE" -o "$OUTPUT_BASE"
+        # Generate PlantUML using instance graph generator
+        python3 "$SCRIPT_DIR/src/graph_instance_generator.py" "$INPUT_FILE" -o "$OUTPUT_BASE"
         
         if [[ ! -f "$PUML_FILE" ]]; then
-            echo -e "${RED}Error: Failed to generate Navigation PlantUML${NC}"
+            echo -e "${RED}Error: Failed to generate Instance Graph PlantUML${NC}"
             exit 1
         fi
         
@@ -756,6 +870,86 @@ main() {
             echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.puml${NC}"
         else
             rm -f "$PUML_FILE"
+        fi
+        
+        exit 0
+    fi
+
+    # Handle navigation model mode
+    if $GEN_NAV; then
+        if $GEN_DIRECT; then
+            # Direct SVG generation (no PlantUML dependency)
+            # Provides precise control over element positioning
+            
+            SVG_FILE="${OUTPUT_BASE}.svg"
+            python3 "$SCRIPT_DIR/src/nav_svg_generator.py" "$INPUT_FILE" -o "$OUTPUT_BASE"
+            
+            if [[ ! -f "$SVG_FILE" ]]; then
+                echo -e "${RED}Error: Failed to generate Navigation SVG${NC}"
+                exit 1
+            fi
+            
+            echo -e "${GREEN}✅ Generated: ${SVG_FILE}${NC}"
+            
+            # Convert SVG to PNG if requested
+            if $GEN_PNG; then
+                if command -v convert &> /dev/null; then
+                    convert -density 300 "$SVG_FILE" "${OUTPUT_BASE}.png"
+                    echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.png${NC}"
+                else
+                    echo -e "${YELLOW}Warning: ImageMagick not found. Install with: sudo apt install imagemagick${NC}"
+                fi
+            fi
+            
+            # Convert SVG to JPG if requested
+            if $GEN_JPG; then
+                if command -v convert &> /dev/null; then
+                    convert -density 300 -background white -flatten "$SVG_FILE" "${OUTPUT_BASE}.jpg"
+                    echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.jpg${NC}"
+                else
+                    echo -e "${YELLOW}Warning: ImageMagick not found. Install with: sudo apt install imagemagick${NC}"
+                fi
+            fi
+            
+            # Remove SVG if not explicitly requested
+            if ! $GEN_SVG && ($GEN_PNG || $GEN_JPG); then
+                rm -f "$SVG_FILE"
+            fi
+        else
+            # PlantUML-based generation (original method)
+            PUML_FILE="${OUTPUT_BASE}.puml"
+            
+            # Generate PlantUML using nav generator
+            python3 "$SCRIPT_DIR/src/nav_generator.py" "$INPUT_FILE" -o "$OUTPUT_BASE"
+            
+            if [[ ! -f "$PUML_FILE" ]]; then
+                echo -e "${RED}Error: Failed to generate Navigation PlantUML${NC}"
+                exit 1
+            fi
+            
+            ensure_plantuml
+            
+            # Generate images
+            if $GEN_PNG || ( ! $GEN_JPG && ! $GEN_SVG && ! $GEN_PUML ); then
+                java -jar "$PLANTUML_JAR" -tpng -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.png" 2>/dev/null
+                echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.png${NC}"
+            fi
+            
+            if $GEN_JPG; then
+                java -jar "$PLANTUML_JAR" -tjpg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.jpg" 2>/dev/null
+                echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.jpg${NC}"
+            fi
+            
+            if $GEN_SVG; then
+                java -jar "$PLANTUML_JAR" -tsvg -pipe < "$PUML_FILE" > "${OUTPUT_BASE}.svg" 2>/dev/null
+                echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.svg${NC}"
+            fi
+            
+            if $GEN_PUML; then
+                echo -e "${GREEN}✅ Generated: ${OUTPUT_BASE}.puml${NC}"
+            else
+                rm -f "$PUML_FILE"
+            fi
         fi
         
         exit 0
