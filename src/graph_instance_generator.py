@@ -14,9 +14,15 @@ import sys
 import os
 
 def generate_plantuml(data: dict) -> str:
-    """Generate PlantUML for graph instance diagram"""
+    """Generate PlantUML for graph instance diagram with package boundary"""
     lines = ['@startuml']
     lines.append('skinparam backgroundColor white')
+    lines.append('skinparam package {')
+    lines.append('  BackgroundColor white')
+    lines.append('  BorderColor black')
+    lines.append('  FontSize 14')
+    lines.append('  FontStyle bold')
+    lines.append('}')
     lines.append('skinparam class {')
     lines.append('  BackgroundColor #E8F5E9')  # Light green for instances
     lines.append('  BorderColor #2E7D32')
@@ -28,7 +34,9 @@ def generate_plantuml(data: dict) -> str:
     lines.append('')
     
     title = data.get('name', 'Example Graph')
-    lines.append(f'title {title}')
+    
+    # Package boundary
+    lines.append(f'package "pkg {title}" {{')
     lines.append('')
     
     # Generate nodes (instances)
@@ -39,11 +47,11 @@ def generate_plantuml(data: dict) -> str:
         props = node.get('properties', {})
         
         # Class with colon prefix
-        lines.append(f'class ":{label}" as {node_id} {{')
+        lines.append(f'  class ":{label}" as {node_id} {{')
         for prop_name, prop_value in props.items():
             # Format: name = value (no quotes per professor's style)
-            lines.append(f'  {prop_name} = {prop_value}')
-        lines.append('}')
+            lines.append(f'    {prop_name} = {prop_value}')
+        lines.append('  }')
         lines.append('')
     
     # Generate relationships (plain lines, no arrows)
@@ -54,8 +62,9 @@ def generate_plantuml(data: dict) -> str:
         rel_type = edge.get('type', '')
         
         # Plain line with label (no arrowhead)
-        lines.append(f'{from_id} -- {to_id} : {rel_type}')
+        lines.append(f'  {from_id} -- {to_id} : {rel_type}')
     
+    lines.append('}')  # Close package
     lines.append('@enduml')
     return '\n'.join(lines)
 
