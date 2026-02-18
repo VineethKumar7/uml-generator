@@ -7,11 +7,149 @@ Format:
 - Labels with colon prefix: :Person
 - Properties with equals: name = John
 - Plain lines (no arrowheads) with relationship names
+
+Supports two modes:
+1. Direct instance data (nodes/edges in YAML)
+2. Auto-generate from schema (classes/associations in YAML)
 """
 
 import yaml
 import sys
 import os
+
+
+def auto_generate_instances(data: dict) -> dict:
+    """
+    Auto-generate example instances from a domain model schema.
+    Creates sample data for each class and relationship.
+    """
+    classes = data.get('classes', {})
+    associations = data.get('associations', [])
+    enumerations = data.get('enumerations', {})
+    generalizations = data.get('generalizations', [])
+    
+    if not classes:
+        return data  # Not a schema, return as-is
+    
+    nodes = []
+    edges = []
+    node_counter = {}
+    
+    # Find child classes (to skip abstract parents if needed)
+    child_classes = set()
+    for gen in generalizations:
+        child_classes.add(gen.get('child', ''))
+    
+    # Generate sample nodes for each class
+    for class_name, class_data in classes.items():
+        class_data = class_data or {}
+        attrs = class_data.get('attributes', [])
+        
+        # Create 1-2 instances per class (2 for Person to show relationships)
+        num_instances = 2 if class_name.lower() in ['person', 'user', 'customer', 'patient', 'doctor'] else 1
+        
+        for i in range(num_instances):
+            node_id = f"{class_name.lower()}{i+1}"
+            node_counter[class_name] = node_counter.get(class_name, 0) + 1
+            
+            # Generate sample property values
+            props = {}
+            for attr in attrs:
+                if isinstance(attr, dict):
+                    attr_name = attr.get('name', '')
+                    attr_type = attr.get('type', 'String')
+                else:
+                    attr_name = str(attr)
+                    attr_type = 'String'
+                
+                # Generate sample value based on type
+                if attr_type in enumerations:
+                    enum_values = enumerations[attr_type]
+                    props[attr_name] = enum_values[i % len(enum_values)] if enum_values else 'VALUE'
+                elif attr_type.lower() in ['int', 'integer', 'number', 'float', 'double']:
+                    props[attr_name] = (i + 1) * 100
+                elif attr_type.lower() in ['date', 'datetime']:
+                    props[attr_name] = f"2026-0{i+1}-15"
+                elif attr_type.lower() == 'boolean':
+                    props[attr_name] = 'true' if i % 2 == 0 else 'false'
+                elif 'name' in attr_name.lower():
+                    sample_names = ['John', 'Alice', 'Bob', 'Carol', 'David']
+                    props[attr_name] = sample_names[i % len(sample_names)]
+                elif 'email' in attr_name.lower():
+                    props[attr_name] = f"user{i+1}@example.com"
+                else:
+                    props[attr_name] = f"{attr_name.capitalize()}{i+1}"
+            
+            nodes.append({
+                'id': node_id,
+                'label': class_name,
+                'properties': props
+            })
+    
+    # Build node lookup by class
+    nodes_by_class = {}
+    for node in nodes:
+        label = node['label']
+        if label not in nodes_by_class:
+            nodes_by_class[label] = []
+        nodes_by_class[label].append(node['id'])
+    
+    # Generate edges from associations
+    for assoc in associations:
+        from_class = assoc.get('from', '')
+        to_class = assoc.get('to', '')
+        assoc_name = assoc.get('name', '')
+        assoc_type = assoc.get('type', 'association')
+        
+        # Convert to graph relationship name
+        if assoc_type == 'composition':
+            rel_name = 'CONTAINS'
+        elif assoc_name:
+            rel_name = f"HAS_{assoc_name.upper().replace(' ', '_')}"
+        else:
+            rel_name = f"HAS_{to_class.upper()}"
+        
+        # Create edges between instances
+        from_nodes = nodes_by_class.get(from_class, [])
+        to_nodes = nodes_by_class.get(to_class, [])
+        
+        if from_nodes and to_nodes:
+            # Connect first from_node to first to_node
+            edges.append({
+                'from': from_nodes[0],
+                'to': to_nodes[0],
+                'type': rel_name
+            })
+            
+            # If multiple nodes, create more relationships for realism
+            if len(from_nodes) > 1 and len(to_nodes) > 1:
+                edges.append({
+                    'from': from_nodes[1],
+                    'to': to_nodes[min(1, len(to_nodes)-1)],
+                    'type': rel_name
+                })
+    
+    # Handle self-referencing (e.g., Person -> Person for friends)
+    for assoc in associations:
+        from_class = assoc.get('from', '')
+        to_class = assoc.get('to', '')
+        if from_class == to_class:
+            nodes_list = nodes_by_class.get(from_class, [])
+            if len(nodes_list) >= 2:
+                assoc_name = assoc.get('name', 'RELATED')
+                rel_name = f"HAS_{assoc_name.upper().replace(' ', '_')}"
+                edges.append({
+                    'from': nodes_list[0],
+                    'to': nodes_list[1],
+                    'type': rel_name
+                })
+    
+    return {
+        'name': data.get('name', 'Example Graph'),
+        'nodes': nodes,
+        'edges': edges
+    }
+
 
 def generate_plantuml(data: dict) -> str:
     """Generate PlantUML for graph instance diagram with package boundary"""
@@ -130,6 +268,19 @@ edges:
     
     with open(input_file, 'r') as f:
         data = yaml.safe_load(f)
+    
+    # Check if this is a schema (has classes) or instance data (has nodes)
+    # If schema, auto-generate example instances
+    if 'classes' in data and 'nodes' not in data:
+        print("📊 Auto-generating example instances from schema...")
+        data = auto_generate_instances(data)
+    elif 'examples' in data:
+        # Use provided examples section
+        data = {
+            'name': data.get('name', 'Example Graph'),
+            'nodes': data['examples'].get('nodes', []),
+            'edges': data['examples'].get('edges', [])
+        }
     
     puml = generate_plantuml(data)
     
