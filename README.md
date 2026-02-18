@@ -3,20 +3,26 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-Generate **UML Class Diagrams** and **Graph Schemas** (Neo4j property graphs) from simple YAML definitions. Outputs XMI, PlantUML, PNG, JPEG, and SVG.
+Generate **UML Class Diagrams**, **Graph Schemas**, **Instance Graphs**, **Navigation Models**, and **Database ER Diagrams** from simple YAML/JSON definitions. Outputs XMI, PlantUML, PNG, JPEG, SVG, SQL, and Markdown.
 
 Perfect for:
 - 📚 Students creating UML diagrams for exams (including EWADIS!)
 - 🏗️ Software architects documenting domain models
 - 🚀 Quick prototyping of data models
 - 📊 Neo4j/Graph database schema design
+- 🗺️ UWE Navigation Model diagrams
+- 🗄️ Database documentation and ER diagrams
 
 ## Features
 
-- ✅ **Simple YAML input** — Human-readable model definitions
-- ✅ **Multiple output formats** — XMI, PlantUML, PNG, JPEG, SVG
+- ✅ **Simple YAML/JSON input** — Human-readable model definitions
+- ✅ **Multiple output formats** — XMI, PlantUML, PNG, JPEG, SVG, SQL, Markdown
 - ✅ **Full UML support** — Classes, attributes, associations, compositions, aggregations, enumerations, inheritance
 - ✅ **Graph Schema support** — Generate Neo4j property graph schemas with automatic direction detection
+- ✅ **Instance Graphs** — Example diagrams with actual data values
+- ✅ **Navigation Models** — UWE navigation diagrams with pages, menus, indexes, queries
+- ✅ **Database ER Diagrams** — From JSON schema with example data
+- ✅ **Documentation generation** — Markdown tables (O/R mapping) and SQL DDL
 - ✅ **Astah compatible** — Generated XMI can be imported into Astah
 - ✅ **Command-line tool** — Easy integration into workflows
 
@@ -279,19 +285,61 @@ Authority "- authority 1" -- "- buildings 1..*" Building
 
 ```bash
 uml-gen <model.yaml> [options]
+uml-gen <schema.json> --schema [options]
 
 Options:
   -o, --output <name>   Output base name (without extension)
   --png                 Generate PNG image
   --jpg, --jpeg         Generate JPEG image
   --svg                 Generate SVG image
-  --xmi                 Generate XMI file (default)
+  --xmi                 Generate XMI file
   --plantuml            Generate PlantUML file
   --all                 Generate all formats
+
+Modes:
   --graph               Generate Graph Schema (Neo4j property graph)
+  --instance            Generate Instance Graph (example data diagram)
+  --nav                 Generate UWE Navigation Model diagram
+  --schema              Database ER diagram mode (JSON input)
+  --direct              Use direct SVG generation (precise positioning, for --nav)
+
+Documentation:
+  --tables              Generate Markdown table documentation (O/R mapping)
+  --sql                 Generate SQL DDL (CREATE TABLE statements)
+  --per-table           Generate individual table images (with --schema)
+
+Help:
+  --example             Show example YAML format (UML)
   --graph-rules         Show Graph Schema conversion rules
-  --example             Show example YAML format
+  --instance-example    Show Instance Graph YAML format
+  --nav-example         Show Navigation Model YAML format
+  --schema-example      Show Database ER JSON format
   --help                Show help
+```
+
+### Quick Examples
+
+```bash
+# UML Class Diagram
+uml-gen model.yaml --png
+
+# Graph Schema (Neo4j)
+uml-gen model.yaml --graph --png
+
+# Instance Graph (with actual data)
+uml-gen instance.yaml --instance --png
+
+# Navigation Model (UWE)
+uml-gen nav.yaml --nav --png              # PlantUML-based
+uml-gen nav.yaml --nav --direct --png     # Direct SVG (recommended)
+
+# Database ER Diagram
+uml-gen schema.json --schema --png
+uml-gen schema.json --schema --per-table --png  # Individual tables
+
+# Documentation
+uml-gen model.yaml --tables    # Markdown O/R mapping
+uml-gen model.yaml --sql       # SQL CREATE TABLE
 ```
 
 ## Graph Schema Generation
@@ -348,6 +396,203 @@ Category ── CONTAINS ▼ ── Product (down)
 - ➡️ **Direction in text** — No arrowheads on lines, direction shown as ► ▼ ◄ ▲
 - 🔄 **Inheritance flattening** — Subclasses get parent's properties AND relationships
 - 📝 **Relationship naming** — Auto-converts role names to `HAS_X` format
+
+## Instance Graph Generation
+
+Generate example graphs showing actual data values — perfect for exam questions asking "show an example instance".
+
+### Usage
+
+```bash
+uml-gen instance.yaml --instance --png
+uml-gen --instance-example  # Show YAML format
+```
+
+### YAML Format
+
+```yaml
+name: "Online Shop Example"
+
+nodes:
+  - id: john
+    label: Person
+    properties:
+      name: John
+      
+  - id: laptop1
+    label: Product
+    properties:
+      name: Laptop
+      price: 1500
+      
+  - id: purchase1
+    label: Purchase
+    properties:
+      quantity: 1
+
+edges:
+  - from: john
+    to: purchase1
+    label: places
+    
+  - from: purchase1
+    to: laptop1
+    label: contains
+```
+
+### Instance Graph Features
+
+- 📝 **Colon prefix labels** — `:Person` instead of `Person`
+- 📊 **Property values** — `name = John` with actual data
+- ➖ **Plain lines** — No arrowheads, just relationship labels
+- 🎯 **Exam-ready** — Matches expected format for EWADIS instance diagrams
+
+## Navigation Model Generation
+
+Generate UWE Navigation Diagrams with pages, menus, indexes, queries, and process classes.
+
+### Usage
+
+```bash
+uml-gen nav.yaml --nav --png              # PlantUML-based (automatic layout)
+uml-gen nav.yaml --nav --direct --png     # Direct SVG (precise positioning, recommended)
+uml-gen --nav-example                      # Show YAML format
+```
+
+### YAML Format
+
+```yaml
+name: "E-Commerce Navigation"
+entryPoint: HomePage
+
+pages:
+  HomePage:
+    isHome: true
+    attributes:
+      - welcomeMessage: String
+    domainRef: Product  # ● prefix for domain reference
+
+menus:
+  MainMenu:
+    isLandmark: true
+
+indexes:
+  ProductList:
+    ref: "products: Product[*]"  # Domain reference with [*]
+
+queries:
+  ProductSearch:
+    attributes:
+      - searchTerm: String
+      - category: String
+
+processClasses:
+  Checkout:
+    attributes:
+      - cartTotal: Float
+
+links:
+  # Navigation link (solid line)
+  - from: MainMenu
+    to: ProductList
+    name: browse
+    type: navigation
+  
+  # Process link (solid + <<processlink>>)
+  - from: MainMenu
+    to: ProductSearch
+    name: search
+    type: process
+    condition: authenticated  # {condition} guard
+  
+  # Containment (◆ diamond)
+  - from: HomePage
+    to: MainMenu
+    type: containment
+```
+
+### Navigation Model Features
+
+- 🎨 **Color-coded stereotypes** — navigationClass, menu, index, query, processClass
+- 🏠 **Entry point markers** — `● □` for home/landmark
+- 🔗 **Link types** — Navigation (solid), Process (<<processlink>>), Containment (◆)
+- 📋 **Guards & conditions** — `{authenticated}` on links
+- ✅ **`--direct` mode** — Precise SVG positioning (recommended over PlantUML)
+
+## Database ER Diagram Generation
+
+Generate database ER diagrams from JSON schema definitions, with optional example data.
+
+### Usage
+
+```bash
+uml-gen schema.json --schema --png
+uml-gen schema.json --schema --per-table --png  # Individual table PNGs
+uml-gen --schema-example                         # Show JSON format
+```
+
+### JSON Format
+
+```json
+{
+  "name": "E-Commerce Database",
+  "tables": {
+    "Users": {
+      "columns": {
+        "id": { "type": "INT", "pk": true },
+        "email": { "type": "VARCHAR(255)", "notNull": true, "unique": true },
+        "role_id": { "type": "INT", "fk": "Roles.id" }
+      },
+      "exampleData": [
+        { "id": 1, "email": "john@example.com", "role_id": 1 },
+        { "id": 2, "email": "jane@example.com", "role_id": 2 }
+      ]
+    },
+    "Roles": {
+      "columns": {
+        "id": { "type": "INT", "pk": true },
+        "name": { "type": "VARCHAR(50)", "notNull": true }
+      }
+    }
+  },
+  "relations": [
+    { "from": "Users", "to": "Roles", "type": "many-to-one" }
+  ]
+}
+```
+
+### Database ER Features
+
+- 🔑 **Primary keys** — Marked with `PK`
+- 🔗 **Foreign keys** — Marked with `FK` and reference
+- 📊 **Example data** — Shows sample rows in table
+- 📁 **Per-table mode** — Individual PNG per table (outputs to `tables/` subfolder)
+
+## Documentation Generation
+
+Generate O/R mapping documentation and SQL DDL from your YAML model.
+
+### Markdown Tables (O/R Mapping)
+
+```bash
+uml-gen model.yaml --tables
+```
+
+Generates a Markdown file with:
+- Class-to-table mapping
+- Attribute-to-column mapping  
+- Association implementation (foreign keys, join tables)
+
+### SQL DDL
+
+```bash
+uml-gen model.yaml --sql
+```
+
+Generates `CREATE TABLE` statements with:
+- Primary keys
+- Foreign key constraints
+- Data type mapping (String → VARCHAR, Integer → INT, etc.)
 
 ## Examples
 
